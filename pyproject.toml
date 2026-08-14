@@ -1,0 +1,25 @@
+[project]
+name = "research-assistant"
+version = "0.1.0"
+description = "Durable dynamic research-agent prototype"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "httpx>=0.28",
+  "langgraph>=0.6",
+  "langgraph-checkpoint-sqlite>=2.0",
+  "pydantic>=2.10",
+]
+
+[project.scripts]
+research-assistant = "research_assistant.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8.3"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
