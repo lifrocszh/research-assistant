@@ -207,6 +207,8 @@ Tools should perform concrete actions.
 
 Avoid exposing large numbers of narrowly differentiated tools.
 
+Live search adapters receive concise queries rather than orchestration instructions. Newline-delimited directives and follow-up metadata are removed before Tavily or arXiv calls. Fixture search keeps the original deterministic matching behavior.
+
 ## 6. Skills
 
 Skills represent reusable procedures rather than capabilities.
@@ -265,6 +267,8 @@ Do not place every agent, skill, and tool definition into orchestrator context.
 
 ## 8. Dynamic Delegation
 
+The initial plan may split a multi-topic question into independent, topic-scoped actions. The prototype currently recognizes architecture/implementation and competitor/comparison topics. Each action carries its topic into evidence collection and final Markdown sections.
+
 Orchestrator should be able to produce plans like:
 
 ```text
@@ -314,6 +318,8 @@ Synthesis
 
 No fixed maximum number of research hops beyond runtime safety limits.
 
+Topic follow-ups target the missing topic. A generic source-category gap must not route a topic-specific question to an unrelated academic search.
+
 ## 9. Evidence Model
 
 Every research result should return structured evidence.
@@ -326,10 +332,13 @@ Finding(
     evidence=str,
     confidence=float,
     citation=str | None,
+    topic=str | None,
     entities=list[str],
     time_period=str | None,
 )
 ```
+
+Before storage, findings pass bounded quality checks. Fragmentary or obvious repeated-text claims are rejected. Architecture findings require the requested subject and implementation vocabulary. Competitor findings require a named competitor in the title or claim and recommendation-system implementation vocabulary in the claim.
 
 Maintain:
 
@@ -524,6 +533,8 @@ Measure:
 accuracy
 citation quality
 source quality
+claim relevance and completeness
+query quality
 number of useful research hops
 unnecessary tool calls
 parallelization quality
@@ -596,4 +607,4 @@ The prototype succeeds when B can discover and execute different research strate
 
 ### Useful reference architecture
 
-Current Deep Agents work is particularly relevant because LangChain now supports **dynamic subagents / runtime-generated orchestration**, including conditional branching, fan-out, and multi-phase execution. Anthropic's tool-design guidance also supports minimizing overlapping tool definitions and using progressive disclosure for large tool collections. citeturn0search0
+Deep Agents remains a future comparison point, not a current dependency. The prototype first validates its smaller LangGraph plus custom bounded orchestrator. Reconsider Deep Agents after evaluation shows that filesystem context management, recursive delegation, or runtime-generated workflows solve a measured limitation.

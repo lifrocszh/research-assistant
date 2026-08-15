@@ -20,7 +20,12 @@ class CapabilityRegistry:
         self.tools = {item.name: item for item in _tools()}
 
     def discover_agents(self, query: str) -> list[AgentSpec]:
-        return self._discover(query, self.agents.values())
+        query_terms = _terms(query)
+        return [
+            spec
+            for spec in self._discover(query, self.agents.values())
+            if spec.name != "company_researcher" or query_terms & set(spec.keywords)
+        ]
 
     def discover_skills(self, query: str) -> list[SkillSpec]:
         return self._discover(query, self.skills.values())

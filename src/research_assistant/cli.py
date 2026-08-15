@@ -38,7 +38,12 @@ def _parser() -> argparse.ArgumentParser:
     run = commands.add_parser("run", help="start a research run")
     run.add_argument("question")
     run.add_argument("--thread", default=None)
-    run.add_argument("--mode", choices=["fixture", "live"], default="fixture")
+    run.add_argument(
+        "--mode",
+        choices=["fixture", "live"],
+        default="fixture",
+        help="fixture (default): offline, deterministic, no LLM calls; live: adaptive model-guided research",
+    )
     run.add_argument("--document", action="append", default=[])
     run.add_argument("--fixtures")
     _common(run, include_limits=True)
@@ -50,6 +55,7 @@ def _parser() -> argparse.ArgumentParser:
 
 def _common(parser: argparse.ArgumentParser, *, include_limits: bool = False) -> None:
     parser.add_argument("--checkpoint", default=".research-assistant/checkpoints.sqlite")
+    parser.add_argument("--log-dir", default=".research-assistant/logs", help="directory for detailed per-run logs")
     parser.add_argument("--jsonl", metavar="PATH", help="event file; use - for stdout")
     parser.add_argument("--output", metavar="PATH", help="write final Markdown")
     parser.add_argument("--pause-after-turn", action="store_true")
@@ -78,7 +84,7 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     writer = EventWriter(args.jsonl, append=args.command == "resume")
     try:
-        with ResearchRuntime(args.checkpoint, writer) as runtime:
+        with ResearchRuntime(args.checkpoint, writer, args.log_dir) as runtime:
             if args.command == "run":
                 state = runtime.run(
                     args.question,

@@ -36,6 +36,7 @@ class Finding(BaseModel):
     evidence: str
     confidence: float = Field(ge=0, le=1)
     citation: str | None = None
+    topic: str | None = None
     entities: list[str] = Field(default_factory=list)
     time_period: str | None = None
 
@@ -57,6 +58,7 @@ class EvidenceStore(BaseModel):
 class Action(BaseModel):
     agent: str
     task: str
+    topic: str | None = None
     skills: list[str] = Field(default_factory=list)
     tools: list[str] = Field(default_factory=list)
     follow_up: bool = False
@@ -80,6 +82,7 @@ class Decision(BaseModel):
 class AgentResult(BaseModel):
     agent: str
     task: str
+    topic: str | None = None
     findings: list[Finding] = Field(default_factory=list)
     tool_calls: int = 0
     errors: list[str] = Field(default_factory=list)
@@ -101,7 +104,7 @@ class RuntimeLimits(BaseModel):
     max_research_depth: int = Field(default=5, ge=1)
     max_runtime_seconds: float = Field(default=180, gt=0)
     max_tool_calls_per_agent: int = Field(default=8, ge=1)
-    max_tokens_per_run: int = Field(default=32_000, ge=1)
+    max_tokens_per_run: int = Field(default=100_000, ge=1)
 
 
 class ResearchState(BaseModel):
@@ -111,6 +114,7 @@ class ResearchState(BaseModel):
     mode: Literal["fixture", "live"] = "fixture"
     documents: list[str] = Field(default_factory=list)
     fixture_path: str | None = None
+    log_path: str | None = None
     limits: RuntimeLimits = Field(default_factory=RuntimeLimits)
     evidence: EvidenceStore = Field(default_factory=EvidenceStore)
     decision: Decision | None = None

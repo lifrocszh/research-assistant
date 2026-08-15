@@ -45,6 +45,8 @@ Prove dynamic research execution end to end without a UI.
 - Sequential and parallel dispatcher.
 - Evidence aggregation.
 - Gap and conflict detection.
+- Topic-aware query planning for architecture and competitor/comparison questions.
+- Evidence acceptance checks for complete claims, named entities, and implementation relevance.
 - Follow-up delegation.
 - Markdown final answers with citations.
 - JSONL event output.
@@ -80,6 +82,7 @@ Support resume by thread ID and optional pause after a turn.
 - Public arXiv adapter.
 - Public SEC adapter.
 - Markdown/text document loading and search.
+- Live search query cleanup removes instruction prose before provider calls; fixture queries remain deterministic.
 
 Defer PDF, DOCX, and spreadsheet extraction.
 
@@ -221,6 +224,9 @@ Cover:
 - Runtime limits.
 - Evidence conflict detection.
 - Critic gap detection.
+- Topic routing and topic-scoped follow-up.
+- Rejection of incomplete, noisy, and weakly relevant claims.
+- Live-query normalization without changing fixture behavior.
 - SQLite resume.
 - Fixture determinism.
 - HTTP timeout and error handling.

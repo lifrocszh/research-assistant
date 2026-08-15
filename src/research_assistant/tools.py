@@ -30,6 +30,7 @@ class SourceRecord:
 DEFAULT_FIXTURES = [
     SourceRecord("LangGraph overview", "https://fixtures.local/langgraph", "LangGraph provides durable execution, checkpointing, and stateful orchestration for long-running agents.", "web", "LangGraph supports durable state and checkpointed agent execution.", 0.9),
     SourceRecord("Dynamic orchestration study", "https://arxiv.org/abs/2401.00001", "Dynamic delegation can adapt tool and specialist selection to each research question.", "academic", "Dynamic delegation changes the execution path based on the question.", 0.8),
+    SourceRecord("Dynamic delegation overview", "https://fixtures.local/dynamic-delegation", "Dynamic delegation routes research tasks to specialized agents based on question and evidence needs.", "web", "Dynamic delegation routes tasks to specialists based on question and evidence needs.", 0.8),
     SourceRecord("Acme 2025 10-K", "https://sec.gov/fixtures/acme-10k", "Acme reported 2025 gross margin of 41%; higher freight costs reduced margin.", "regulatory", "Acme's 2025 gross margin declined because freight costs rose.", 0.95),
     SourceRecord("Acme investor update", "https://fixtures.local/acme-update", "Acme management said product mix, not freight costs, was the primary cause of the 2025 margin decline.", "web", "Acme's 2025 gross margin did not decline primarily because freight costs rose.", 0.7),
     SourceRecord("Python documentation", "https://fixtures.local/python", "Python 3.12 improves error messages and typing features.", "web", "Python 3.12 includes typing and diagnostic improvements.", 0.85),
@@ -39,6 +40,15 @@ DEFAULT_FIXTURES = [
 def _terms(text: str) -> set[str]:
     stopwords = {"a", "an", "and", "are", "as", "at", "be", "by", "did", "do", "does", "for", "from", "in", "is", "it", "no", "not", "of", "on", "or", "question", "the", "to", "was", "what", "with"}
     return set(re.findall(r"[a-z0-9]+", text.lower())) - stopwords
+
+
+def _live_query(query: str) -> str:
+    text = next((line.strip() for line in query.splitlines() if line.strip()), "")
+    text = re.split(r"\b(?:address (?:(?:these|the) )?evidence gaps?|need evidence for|follow[- ]?up)\b", text, maxsplit=1, flags=re.IGNORECASE)[0]
+    text = re.sub(r"^(?:research\s+question|question|task|research|investigate|find|search(?:\s+for)?|look\s+up|tell\s+me\s+about|please)\s*:?\s*", "", text, flags=re.IGNORECASE)
+    stopwords = {"a", "an", "and", "are", "as", "at", "be", "by", "can", "could", "did", "do", "does", "explain", "for", "from", "how", "in", "is", "it", "me", "more", "of", "on", "or", "please", "research", "should", "summary", "summarize", "tell", "that", "the", "these", "this", "to", "using", "what", "when", "where", "which", "who", "why", "will", "with"}
+    words = (word for word in re.findall(r"[A-Za-z0-9]+(?:[-_.][A-Za-z0-9]+)*", text) if word.lower() not in stopwords)
+    return " ".join(dict.fromkeys(words))[:240].strip()
 
 
 class FixtureSearchAdapter:
@@ -81,7 +91,7 @@ class TavilySearchAdapter:
             raise ToolError("live search requires TAVILY_API_KEY")
         endpoint = os.getenv("TAVILY_API_URL", "https://api.tavily.com/search")
         try:
-            response = self.client.post(endpoint, json={"api_key": key, "query": query, "max_results": limit, "search_depth": "basic"})
+            response = self.client.post(endpoint, json={"api_key": key, "query": _live_query(query), "max_results": limit, "search_depth": "basic"})
             response.raise_for_status()
             data = response.json()
             return [SourceRecord(item.get("title") or item["url"], item["url"], item.get("content", ""), "web") for item in data.get("results", [])[:limit]]
@@ -162,7 +172,7 @@ class ResearchTools:
         if self.mode == "fixture":
             return self.fixtures.search(query, {"academic"})
         try:
-            response = self.client.get("https://export.arxiv.org/api/query", params={"search_query": f"all:{query}", "start": 0, "max_results": 3})
+            response = self.client.get("https://export.arxiv.org/api/query", params={"search_query": f"all:{_live_query(query)}", "start": 0, "max_results": 3})
             response.raise_for_status()
             root = ET.fromstring(response.text)
             ns = {"a": "http://www.w3.org/2005/Atom"}

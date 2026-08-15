@@ -8,8 +8,7 @@ Use these skills for every task in this repository:
 - `ponytail` — minimal implementation and YAGNI. Default: `full`.
 
 Load both at session start. Keep them active for every response and code
-change. Explicit commands such as `stop caveman`, `stop ponytail`, or
-`normal mode` override this requirement for the requested scope.
+change.
 
 ## Repository facts
 
@@ -20,6 +19,10 @@ change. Explicit commands such as `stop caveman`, `stop ponytail`, or
   `.research-assistant/checkpoints.sqlite`.
 - `registry.py` discovers capabilities; `engine.py` orchestrates bounded
   research; `tools.py` provides fixture/live adapters and extraction.
+- `ui.py` provides the Phase 2 FastAPI/WebSocket UI. It consumes existing
+  `RunEvent` objects and contains no orchestration logic. The browser page uses
+  vanilla HTML/CSS/JavaScript, defaults to live mode, and renders a live event
+  timeline beside the final answer.
 - Phase 1 synthesis is deterministic extractive Markdown. Live HTML becomes
   plain text. PDF, DOCX, and spreadsheet extraction are not implemented.
 - `plan.md` and `spec.md` describe intended scope. Verify source behavior
@@ -52,6 +55,15 @@ Live mode requires `TAVILY_API_KEY`; do not call live services from unit
 tests. Use `tmp_path` for SQLite checkpoints and temporary fixture/document
 files. Treat `.research-assistant/` as local runtime state, not source.
 
+Run the Phase 2 UI:
+
+```powershell
+uv run --env-file .env uvicorn research_assistant.ui:app --reload
+```
+
+The UI defaults to live mode. Use the CLI for fixture, custom fixture,
+document, pause, and resume workflows.
+
 ## Change rules
 
 - Make the smallest change that fixes the behavior. Reuse existing registry,
@@ -61,7 +73,10 @@ files. Treat `.research-assistant/` as local runtime state, not source.
   need no test, but still require `uv run pytest` before completion.
 - Keep tests offline and isolated: use pytest functions, `tmp_path` for files
   and SQLite, `monkeypatch` for environment, and `httpx.MockTransport` for
-  HTTP behavior. Assert errors and emitted events explicitly.
+  HTTP behavior. Use FastAPI `TestClient` for UI/WebSocket tests and send
+  `mode="fixture"` explicitly. Assert errors and emitted events explicitly.
+- Keep `RunEvent` as the shared CLI/UI event contract. Do not add UI-specific
+  orchestration or duplicate runtime state in the frontend.
 - Update `README.md` when CLI flags, environment variables, or user-visible
   behavior changes. Update `plan.md` or `spec.md` only when project scope or
   intended architecture changes.

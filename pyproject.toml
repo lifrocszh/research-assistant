@@ -5,10 +5,12 @@ description = "Durable dynamic research-agent prototype"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+  "fastapi>=0.115",
   "httpx>=0.28",
   "langgraph>=0.6",
   "langgraph-checkpoint-sqlite>=2.0",
   "pydantic>=2.10",
+  "uvicorn[standard]>=0.30",
 ]
 
 [project.scripts]

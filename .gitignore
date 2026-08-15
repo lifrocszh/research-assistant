@@ -3,3 +3,4 @@
 .research-assistant/
 __pycache__/
 *.py[cod]
+.env

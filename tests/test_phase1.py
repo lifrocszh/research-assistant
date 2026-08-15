@@ -8,9 +8,9 @@ import pytest
 from pydantic import ValidationError
 
 from research_assistant.engine import DynamicOrchestrator, ResearchRuntime
-from research_assistant.models import Action, Decision, ResearchState, RuntimeLimits
+from research_assistant.models import Action, Decision, Finding, ResearchState, RuntimeLimits
 from research_assistant.registry import CapabilityRegistry
-from research_assistant.tools import FixtureSearchAdapter, ResearchTools, ToolError
+from research_assistant.tools import FixtureSearchAdapter, ResearchTools, SourceRecord, TavilySearchAdapter, ToolError
 
 
 def test_registry_discovery_and_decision_validation() -> None:
@@ -30,8 +30,218 @@ def test_dynamic_paths_and_dispatch_modes(tmp_path) -> None:
         research = runtime.run("Research dynamic delegation using multiple sources", thread_id="research")
     assert web.used_agents == ["web_researcher"]
     assert len(research.used_agents) > 1
+    assert "company_researcher" not in research.used_agents
+    assert {finding.source_type for finding in research.evidence.findings} == {"academic", "web"}
+    assert not research.evidence.contradictions
     assert not any(event.event_type == "parallel_started" for event in web_events)
     assert any(event.event_type == "parallel_started" for event in research_events)
+
+
+def test_multi_topic_research_is_planned_and_sectioned(tmp_path) -> None:
+    fixture = tmp_path / "tiktok.json"
+    fixture.write_text(json.dumps([
+        {
+            "title": "TikTok recommendation architecture",
+            "url": "https://example.test/tiktok",
+            "content": "TikTok recommendation architecture uses candidate generation and ranking stages.",
+            "source_type": "web",
+            "claim": "TikTok uses candidate generation and ranking stages.",
+        },
+        {
+            "title": "YouTube recommendation engineering",
+            "url": "https://example.test/youtube",
+            "content": "YouTube recommendation systems use candidate generation and ranking.",
+            "source_type": "web",
+            "claim": "YouTube uses candidate generation and ranking.",
+        },
+    ]), encoding="utf-8")
+    question = "Find out more about TikTok recommendation system stack how implemented, competitors in other companies and a summary"
+    state = ResearchState(thread_id="topics", question=question, fixture_path=str(fixture), limits=RuntimeLimits(max_parallel_agents=2, max_total_agents=2, max_research_depth=1))
+    decision = DynamicOrchestrator(CapabilityRegistry()).decide(state)
+    assert decision.parallel
+    assert {action.topic for action in decision.actions} == {"architecture", "competitors"}
+    assert all(action.agent == "web_researcher" for action in decision.actions)
+
+    with ResearchRuntime(tmp_path / "topics.sqlite") as runtime:
+        result = runtime.run(question, thread_id="topics", fixture_path=str(fixture), limits=RuntimeLimits(max_parallel_agents=2, max_total_agents=2, max_research_depth=1))
+    assert "## Architecture" in (result.final_answer or "")
+    assert "## Competitors" in (result.final_answer or "")
+    assert "TikTok uses candidate generation" in (result.final_answer or "")
+    assert "YouTube uses candidate generation" in (result.final_answer or "")
+
+
+def test_noisy_search_claim_is_dropped() -> None:
+    noisy = SourceRecord(
+        "Search result",
+        "https://example.test/noise",
+        "Consulting Consulting Integration Integration Odoo Odoo Manufacturing Manufacturing.",
+        "web",
+    )
+    assert ResearchRuntime._findings([noisy]) == []
+
+
+def test_full_content_extraction_skips_boilerplate_and_keeps_distinct_claims() -> None:
+    record = SourceRecord(
+        "DeepSeek Harness developer preview",
+        "https://example.test/deepseek-harness",
+        "Written by DeepSeek Research. Advertisement: Start your free trial today. DeepSeek Harness uses plugins to connect tools and models to agent sessions. Its sandboxes provide agents with isolated filesystems and a UI.",
+        "web",
+    )
+    findings = ResearchRuntime._findings([record], topic="components", question="What does the DeepSeek Harness do?")
+    assert [finding.claim for finding in findings] == [
+        "DeepSeek Harness uses plugins to connect tools and models to agent sessions.",
+        "Its sandboxes provide agents with isolated filesystems and a UI.",
+    ]
+    assert all(finding.citation == record.url and finding.source_type == "web" for finding in findings)
+
+
+def test_promotional_and_social_card_claims_are_dropped() -> None:
+    record = SourceRecord(
+        "DeepSeek Harness developer preview",
+        "https://example.test/deepseek-harness",
+        "Remy is the world's most powerful product manager agent. Try Remy today for free. Models [...] Follow @DeepSeek for updates. DeepSeek Harness uses plugins to connect tools and models to agent sessions.",
+        "web",
+    )
+    findings = ResearchRuntime._findings([record], topic="components", question="What does the DeepSeek Harness do?")
+    assert [finding.claim for finding in findings] == ["DeepSeek Harness uses plugins to connect tools and models to agent sessions."]
+
+
+def test_markdown_deduplicates_claim_bullets_and_source_rows() -> None:
+    state = ResearchState(thread_id="citations", question="Describe DeepSeek Harness")
+    state.evidence.findings = [
+        Finding(claim="DeepSeek Harness uses plugins for tools.", source="One", source_type="web", evidence="x", confidence=0.8, citation="https://example.test/one"),
+        Finding(claim="DeepSeek Harness uses plugins for tools.", source="Two", source_type="web", evidence="x", confidence=0.8, citation="https://example.test/two"),
+        Finding(claim="DeepSeek Harness has sandboxed sessions.", source="One", source_type="web", evidence="x", confidence=0.8, citation="https://example.test/one"),
+    ]
+    answer = ResearchRuntime._markdown(state)
+    assert answer.count("DeepSeek Harness uses plugins for tools.") == 1
+    assert "- DeepSeek Harness uses plugins for tools. [1, 2]" in answer
+    assert answer.count("https://example.test/one") == 1
+    assert answer.count("https://example.test/two") == 1
+
+
+def test_broad_question_groups_coverage_and_reports_gaps(tmp_path) -> None:
+    fixture = tmp_path / "deepseek-harness.json"
+    fixture.write_text(json.dumps([
+        {
+            "title": "DeepSeek Harness developer preview",
+            "url": "https://example.test/deepseek-harness",
+            "content": "DeepSeek Harness helps developers build and run coding agents. Its plugin architecture connects tools and models to agent sessions. The harness orchestrates sandboxed loops for each agent. Teams can use it to automate repository tasks. It is available as a developer preview. The preview does not support custom production deployments.",
+            "source_type": "web",
+        },
+        {
+            "title": "DeepSeek Harness sponsor",
+            "url": "https://example.test/sponsor",
+            "content": "Advertisement: Subscribe for a free cookbook today. This recipe uses a harness for climbing gear.",
+            "source_type": "web",
+        },
+    ]), encoding="utf-8")
+    with ResearchRuntime(tmp_path / "deepseek.sqlite") as runtime:
+        state = runtime.run(
+            "What does the DeepSeek Harness do?",
+            thread_id="deepseek",
+            fixture_path=str(fixture),
+            limits=RuntimeLimits(max_parallel_agents=3, max_total_agents=6, max_research_depth=4),
+        )
+    answer = state.final_answer or ""
+    for area in ("Purpose", "Components", "Operation", "Use Cases", "Status", "Limitations"):
+        assert f"## {area}" in answer
+    assert "plugin architecture connects tools and models" in answer
+    assert "sandboxed loops" in answer
+    assert "developer preview" in answer
+    assert "cookbook" not in answer
+    assert all(finding.citation == "https://example.test/deepseek-harness" for finding in state.evidence.findings)
+
+    with ResearchRuntime(tmp_path / "gaps.sqlite") as runtime:
+        gaps = runtime.run(
+            "What does the DeepSeek Harness do?",
+            thread_id="gaps",
+            fixture_path=str(fixture),
+            limits=RuntimeLimits(max_parallel_agents=3, max_total_agents=3, max_research_depth=1),
+        )
+    assert "## Unanswered questions" in (gaps.final_answer or "")
+    assert "Need evidence for: status" in (gaps.final_answer or "")
+
+
+def test_live_search_query_drops_instruction_prose(monkeypatch) -> None:
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.update(json.loads(request.content))
+        return httpx.Response(200, json={"results": []})
+
+    monkeypatch.setenv("TAVILY_API_KEY", "test-key")
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    try:
+        TavilySearchAdapter(client).search(
+            "TikTok recommendation system architecture implementation\n"
+            "Focus only on publicly documented architecture."
+        )
+    finally:
+        client.close()
+    assert seen["query"] == "TikTok recommendation system architecture implementation"
+
+
+def test_incomplete_architecture_claim_is_rejected() -> None:
+    record = SourceRecord(
+        "TikTok recommendation architecture",
+        "https://example.test/tiktok-architecture",
+        "The source discusses TikTok recommendation architecture.",
+        "web",
+        "Efficiency, consistency, and scalability.",
+    )
+    findings = ResearchRuntime._findings(
+        [record],
+        topic="architecture",
+        question="How is the TikTok recommendation system implemented?",
+    )
+    assert findings == []
+
+
+def test_competitor_claim_requires_named_comparison() -> None:
+    record = SourceRecord(
+        "TikTok recommendation system",
+        "https://example.test/tiktok-competitors",
+        "A generic overview of TikTok recommendation systems.",
+        "web",
+        "Competitors use candidate generation and ranking.",
+    )
+    findings = ResearchRuntime._findings(
+        [record],
+        topic="competitors",
+        question="Compare TikTok recommendation systems with competitors.",
+    )
+    assert findings == []
+
+
+def test_unrelated_academic_followup_is_not_accepted(tmp_path) -> None:
+    fixture = tmp_path / "followup.json"
+    fixture.write_text(json.dumps([
+        {
+            "title": "TikTok recommendation architecture",
+            "url": "https://example.test/tiktok-architecture",
+            "content": "TikTok recommendation architecture uses candidate generation and ranking stages.",
+            "source_type": "web",
+            "claim": "TikTok uses candidate generation and ranking stages.",
+        },
+        {
+            "title": "CMS detector paper",
+            "url": "https://example.test/cms",
+            "content": "TikTok recommendation architecture query matched an unrelated CMS detector paper about particle physics.",
+            "source_type": "academic",
+            "claim": "The CMS detector measures particle collisions.",
+        },
+    ]), encoding="utf-8")
+
+    with ResearchRuntime(tmp_path / "followup.sqlite") as runtime:
+        state = runtime.run(
+            "How is the TikTok recommendation system implemented?",
+            thread_id="followup",
+            fixture_path=str(fixture),
+            limits=RuntimeLimits(max_parallel_agents=1, max_total_agents=2, max_research_depth=2),
+        )
+
+    assert not any(finding.source_type == "academic" for finding in state.evidence.findings)
 
 
 def test_partial_parallel_failure_keeps_successes(tmp_path) -> None:
@@ -70,17 +280,52 @@ def test_conflict_and_gap_detection(tmp_path) -> None:
     assert "No supported answer" in (gap.final_answer or "")
 
 
+def test_filing_metadata_is_not_a_conflict(tmp_path) -> None:
+    fixture = tmp_path / "filings.json"
+    fixture.write_text(json.dumps([
+        {"title": "LAM 10-K", "url": "https://example.test/10-k", "content": "LAM filed 10-K on 2026-08-07 for period 2026-06-28.", "source_type": "regulatory"},
+        {"title": "LAM 8-K", "url": "https://example.test/8-k", "content": "LAM filed 8-K on 2026-07-29 for period 2026-07-29.", "source_type": "regulatory"},
+    ]), encoding="utf-8")
+    with ResearchRuntime(tmp_path / "filings.sqlite") as runtime:
+        state = runtime.run("Research SEC filings with multiple sources", thread_id="filings", fixture_path=str(fixture))
+    assert not state.evidence.contradictions
+
+
+def test_run_writes_detailed_log(tmp_path) -> None:
+    log_dir = tmp_path / "logs"
+    with ResearchRuntime(tmp_path / "logging.sqlite", log_dir=log_dir) as runtime:
+        state = runtime.run("Research dynamic delegation using multiple sources", thread_id="logging")
+    logs = list(log_dir.glob("*.log"))
+    assert len(logs) == 1
+    assert state.log_path == str(logs[0].resolve())
+    content = logs[0].read_text(encoding="utf-8")
+    for marker in ("session_start", "decision", "agent_spawn", "subtask_started", "tool_call", "tool_result", "agent_result", "result_collected", "final_answer", "session_end"):
+        assert f'"kind": "{marker}"' in content
+    assert "Dynamic delegation overview" in content
+
+
+def test_each_run_gets_a_distinct_log(tmp_path) -> None:
+    log_dir = tmp_path / "logs"
+    with ResearchRuntime(tmp_path / "logging.sqlite", log_dir=log_dir) as runtime:
+        runtime.run("What does LangGraph provide?", thread_id="one")
+        runtime.run("What does Python 3.12 improve?", thread_id="two")
+    assert len(list(log_dir.glob("*.log"))) == 2
+
+
 def test_sqlite_pause_and_resume(tmp_path) -> None:
     checkpoint = tmp_path / "resume.sqlite"
-    with ResearchRuntime(checkpoint) as runtime:
+    log_dir = tmp_path / "logs"
+    with ResearchRuntime(checkpoint, log_dir=log_dir) as runtime:
         paused = runtime.run("What does LangGraph provide?", thread_id="resume-me", pause_after_turn=True)
     assert paused.status == "paused"
     assert paused.depth == 1
-    with ResearchRuntime(checkpoint) as runtime:
+    with ResearchRuntime(checkpoint, log_dir=log_dir) as runtime:
         finished = runtime.resume("resume-me")
     assert finished.status == "finished"
     assert finished.final_answer
     assert finished.run_id == paused.run_id
+    assert len(list(log_dir.glob("*.log"))) == 1
+    assert '"kind": "session_resume"' in next(log_dir.glob("*.log")).read_text(encoding="utf-8")
 
 
 def test_fixture_determinism_and_custom_file(tmp_path) -> None:
