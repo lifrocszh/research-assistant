@@ -102,7 +102,7 @@ uv run --env-file .env research-assistant run "Current research question" --mode
 uv run --env-file .env uvicorn research_assistant.ui:app --reload
 ```
 
-Open `http://127.0.0.1:8000`. Choose **Live: adaptive model research** for model-guided research, or **Fixture: offline, no LLM calls** for deterministic local runs. The page defaults to live mode and presents an orchestration timeline beside the rendered final answer; both panes scroll independently. Live mode needs `TAVILY_API_KEY` and `OPENAI_API_KEY`; without them, the run reports a clear error. Use the CLI for custom fixtures, documents, and resume runs.
+Open `http://127.0.0.1:8000`. Choose **Live: adaptive model research** for model-guided research, or **Fixture: offline, no LLM calls** for deterministic local runs. The page defaults to live mode and presents a research workspace with progress activity beside the rendered final report. Live mode needs `TAVILY_API_KEY` and `OPENAI_API_KEY`; without them, the run reports a clear error. Use the CLI for custom fixtures, documents, and resume runs.
 
 ## Runtime settings
 
