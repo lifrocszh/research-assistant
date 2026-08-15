@@ -43,6 +43,7 @@ Prove dynamic research execution end to end without a UI.
   - `RunEvent`
 - Dynamic orchestrator.
 - Sequential and parallel dispatcher.
+- Live specialist tool loop: after each tool result, the model chooses one registry-approved next tool/query or finishes; fixture mode remains deterministic.
 - Evidence aggregation.
 - Gap and conflict detection.
 - Topic-aware query planning for architecture and competitor/comparison questions.
@@ -58,6 +59,14 @@ Use one dynamic turn:
 ```text
 decide → dispatch → collect evidence → critique → continue or finish
 ```
+
+In live mode, each dispatched specialist action has its own bounded loop:
+
+```text
+tool call → model reviews result → next approved tool/query or finish
+```
+
+Invalid next-step JSON, tools, queries, URLs, and provider failures stop that specialist safely. Fixture mode executes its deterministic action list without model calls.
 
 Checkpoint after every turn with local SQLite.
 
@@ -233,6 +242,7 @@ Cover:
 - Missing credentials.
 - JSONL event validity.
 - Dynamic path variation.
+- Live specialist tool-loop adaptation and fail-closed invalid next steps.
 - Fixed-vs-dynamic evaluation.
 
 ## Explicit Non-Goals

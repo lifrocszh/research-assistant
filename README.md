@@ -1,6 +1,6 @@
 # Research Assistant
 
-Python 3.12 prototype for bounded, durable, evidence-grounded research. LangGraph checkpoints generic research turns; a capability registry and custom orchestrator choose specialist agents and execution order at runtime.
+Python 3.12 prototype for bounded, durable, evidence-grounded research. LangGraph checkpoints generic research turns; a capability registry and custom orchestrator choose specialist agents and execution order at runtime. Live specialists can inspect each tool result and choose another registry-approved tool/query or finish.
 
 ## Setup
 
@@ -43,7 +43,7 @@ uv run research-assistant run "Compare Acme sources" --fixtures fixtures.json
 
 ### Live: current public-web research
 
-Use this for questions such as current news, recent model releases, or current company information. This is the adaptive path: model plans, reviews evidence, chooses follow-up work, and synthesizes. It requires both `TAVILY_API_KEY` for retrieval and `OPENAI_API_KEY` for planning, follow-up decisions, and synthesis.
+Use this for questions such as current news, recent model releases, or current company information. This is the adaptive path: model plans, reviews evidence, chooses follow-up work, and synthesizes. Within each specialist turn, tool results return to the model before the next bounded tool call. It requires both `TAVILY_API_KEY` for retrieval and `OPENAI_API_KEY` for planning, follow-up decisions, and synthesis.
 
 ```powershell
 uv run --env-file .env research-assistant run "What are the latest AI model updates from frontier labs?" --mode live

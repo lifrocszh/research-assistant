@@ -17,7 +17,7 @@ Core architectural goal:
 
 > Let orchestrator dynamically choose **which fixed subagents to invoke, in what order, and how many times**, rather than following fixed LangGraph workflow paths.
 
-LangGraph remains responsible for durable state/checkpointing. Custom orchestration layer controls dynamic agent/skill/tool discovery and delegation.
+LangGraph remains responsible for durable state/checkpointing. Custom orchestration layer controls dynamic agent/skill/tool discovery and delegation. In live mode, each dispatched specialist can inspect tool results and choose another approved tool/query or finish within bounded limits; fixture mode stays deterministic.
 
 ## 2. Target Architecture
 
@@ -89,6 +89,7 @@ Implement small runtime responsible for:
 - Evidence aggregation
 - Conflict/gap detection
 - Follow-up delegation
+- Live per-specialist model/tool loops
 - Maximum depth / concurrency / budget controls
 - Run event streaming
 
@@ -100,6 +101,21 @@ while not resolved:
     actions = dispatcher.execute(decision)
     state = update_state(state, actions)
 ```
+
+Each live action uses a bounded specialist loop rather than executing a fixed
+tool list blindly:
+
+```python
+while tool_budget_remaining:
+    result = execute(next_tool)
+    next_tool = model.choose_next_tool(result, allowed_tools)
+    if next_tool is None:
+        break
+```
+
+The Python runtime executes tools and validates every model-selected tool,
+query, URL, token budget, and runtime limit. Invalid model output or provider
+failure ends that specialist safely. Fixture mode skips this model loop.
 
 ## 4. Fixed Specialist Agents
 
@@ -607,4 +623,4 @@ The prototype succeeds when B can discover and execute different research strate
 
 ### Useful reference architecture
 
-Deep Agents remains a future comparison point, not a current dependency. The prototype first validates its smaller LangGraph plus custom bounded orchestrator. Reconsider Deep Agents after evaluation shows that filesystem context management, recursive delegation, or runtime-generated workflows solve a measured limitation.
+Deep Agents remains a future comparison point, not a current dependency. The prototype now has a smaller bounded live specialist loop while retaining custom evidence validation and runtime safety. Reconsider Deep Agents after evaluation shows that its filesystem context management, recursive delegation, memory, or built-in planning materially improves measured results.
