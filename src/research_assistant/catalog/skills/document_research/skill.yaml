@@ -1,0 +1,12 @@
+skill:
+  id: document_research
+  version: 1.0.0
+  description: Find evidence in user-provided local text.
+  entrypoint: SKILL.md
+  required_tools:
+    - read_document
+    - search_document
+  keywords:
+    - document
+    - file
+    - local

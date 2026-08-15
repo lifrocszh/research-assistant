@@ -1,0 +1,10 @@
+skill:
+  id: synthesis
+  version: 1.0.0
+  description: Write an evidence-grounded cited answer.
+  entrypoint: SKILL.md
+  required_tools: []
+  keywords:
+    - answer
+    - report
+    - synthesize

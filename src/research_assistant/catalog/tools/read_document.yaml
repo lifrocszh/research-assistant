@@ -1,0 +1,15 @@
+tool:
+  id: read_document
+  version: 1.0.0
+  description: Read bounded Markdown or text documents.
+  execution: python
+  input_schema: DocumentInput
+  output_schema: SourceRecords
+  permissions:
+    - document_read
+  source_types:
+    - document
+  keywords:
+    - read
+    - document
+    - file

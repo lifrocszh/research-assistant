@@ -1,0 +1,12 @@
+skill:
+  id: web_research
+  version: 1.0.0
+  description: Search and verify public web evidence.
+  entrypoint: SKILL.md
+  required_tools:
+    - web_search
+    - fetch_url
+  keywords:
+    - web
+    - current
+    - news

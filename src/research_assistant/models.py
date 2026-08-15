@@ -1,32 +1,139 @@
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from typing import Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 
 
 class AgentSpec(BaseModel):
-    name: str
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    version: str
     description: str
-    sources: list[str]
+    model: str
+    system_prompt: str
     skills: list[str]
-    core_tools: list[str]
+    tools: list[str]
+    input_schema: str
+    output_schema: str
+    permissions: list[str] = Field(default_factory=list)
+    sources: list[str] = Field(default_factory=list)
     keywords: list[str] = Field(default_factory=list)
+
+    @field_validator("version")
+    @classmethod
+    def valid_version(cls, value: str) -> str:
+        if not re.fullmatch(r"(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)", value):
+            raise ValueError("version must be SemVer")
+        return value
+
+    @computed_field
+    @property
+    def name(self) -> str:
+        return self.id
+
+    @computed_field
+    @property
+    def core_tools(self) -> list[str]:
+        return self.tools
 
 
 class SkillSpec(BaseModel):
-    name: str
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    version: str
     description: str
+    entrypoint: str = "SKILL.md"
+    required_tools: list[str] = Field(default_factory=list)
     keywords: list[str] = Field(default_factory=list)
+
+    @field_validator("version")
+    @classmethod
+    def valid_version(cls, value: str) -> str:
+        return AgentSpec.valid_version(value)
+
+    @computed_field
+    @property
+    def name(self) -> str:
+        return self.id
 
 
 class ToolSpec(BaseModel):
-    name: str
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    version: str
     description: str
+    execution_type: Literal["python", "mcp"]
+    input_schema: str
+    output_schema: str
+    permissions: list[str] = Field(default_factory=list)
     source_types: list[str]
     keywords: list[str] = Field(default_factory=list)
+
+    @field_validator("version")
+    @classmethod
+    def valid_version(cls, value: str) -> str:
+        return AgentSpec.valid_version(value)
+
+    @computed_field
+    @property
+    def name(self) -> str:
+        return self.id
+
+
+class ResearchTask(BaseModel):
+    question: str = Field(min_length=1)
+    documents: list[str] = Field(default_factory=list)
+
+
+class ResearchResult(BaseModel):
+    findings: list["Finding"] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
+
+
+class SearchInput(BaseModel):
+    query: str = Field(min_length=1)
+
+
+class UrlInput(BaseModel):
+    url: str = Field(min_length=1)
+
+
+class DocumentInput(BaseModel):
+    path: str = Field(min_length=1)
+
+
+class DocumentSearchInput(BaseModel):
+    query: str = Field(min_length=1)
+
+
+class SourceItem(BaseModel):
+    title: str
+    url: str
+    content: str
+    source_type: str
+    claim: str | None = None
+    confidence: float = Field(ge=0, le=1)
+
+
+class SourceRecords(BaseModel):
+    records: list[SourceItem] = Field(default_factory=list)
+
+
+class AgentCapability(BaseModel):
+    id: str
+    version: str
+    description: str
+    skills: list[str]
+    tools: list[str]
+    input_schema: str
+    output_schema: str
 
 
 class Finding(BaseModel):
@@ -55,39 +162,6 @@ class EvidenceStore(BaseModel):
     unanswered_questions: list[str] = Field(default_factory=list)
 
 
-class Action(BaseModel):
-    agent: str
-    task: str
-    topic: str | None = None
-    skills: list[str] = Field(default_factory=list)
-    tools: list[str] = Field(default_factory=list)
-    follow_up: bool = False
-
-
-class Decision(BaseModel):
-    rationale: str
-    actions: list[Action] = Field(default_factory=list)
-    parallel: bool = False
-    finish: bool = False
-
-    @model_validator(mode="after")
-    def valid_shape(self) -> Decision:
-        if self.finish == bool(self.actions):
-            raise ValueError("decision must either finish or contain actions")
-        if self.parallel and len(self.actions) < 2:
-            raise ValueError("parallel decisions need at least two actions")
-        return self
-
-
-class AgentResult(BaseModel):
-    agent: str
-    task: str
-    topic: str | None = None
-    findings: list[Finding] = Field(default_factory=list)
-    tool_calls: int = 0
-    errors: list[str] = Field(default_factory=list)
-
-
 class RunEvent(BaseModel):
     run_id: str
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -114,11 +188,10 @@ class ResearchState(BaseModel):
     mode: Literal["fixture", "live"] = "fixture"
     documents: list[str] = Field(default_factory=list)
     fixture_path: str | None = None
+    catalog_fingerprint: str | None = None
     log_path: str | None = None
     limits: RuntimeLimits = Field(default_factory=RuntimeLimits)
     evidence: EvidenceStore = Field(default_factory=EvidenceStore)
-    decision: Decision | None = None
-    pending_results: list[AgentResult] = Field(default_factory=list)
     events: list[RunEvent] = Field(default_factory=list)
     used_agents: list[str] = Field(default_factory=list)
     agent_calls: dict[str, int] = Field(default_factory=dict)

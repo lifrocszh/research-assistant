@@ -1,626 +1,353 @@
-# Autonomous Research Agent Prototype
+# Registry-first Deep Agents research assistant
 
 ## 1. Objective
 
-Build small prototype of general-purpose research agent that can handle:
+Build a bounded research runtime where a Deep Agents supervisor delegates to
+fixed specialist agents discovered from a versioned catalog. Specialists own
+procedural skills and executable tools. Orchestrator consumes capability
+contracts only.
 
-- Simple question answering
-- Multi-step research
-- Web/source research
-- Local document research
-- Document preparation
-- Multi-hop investigation
-- Parallel specialist research
-- Source conflict detection and reconciliation
+Core rule:
 
-Core architectural goal:
+> Add an agent, skill, or tool manifest without editing orchestrator code.
 
-> Let orchestrator dynamically choose **which fixed subagents to invoke, in what order, and how many times**, rather than following fixed LangGraph workflow paths.
+A new Python tool still needs one runtime adapter. MCP declarations are
+schema-valid but execution remains unsupported in v1.
 
-LangGraph remains responsible for durable state/checkpointing. Custom orchestration layer controls dynamic agent/skill/tool discovery and delegation. In live mode, each dispatched specialist can inspect tool results and choose another approved tool/query or finish within bounded limits; fixture mode stays deterministic.
-
-## 2. Target Architecture
+## 2. Architecture
 
 ```text
-                         USER
-                          │
-                          ▼
-                 ┌─────────────────┐
-                 │   ORCHESTRATOR  │
-                 │    AGENT LOOP   │
-                 └────────┬────────┘
-                          │
-                ┌─────────▼─────────┐
-                │ Capability Registry│
-                │ agents / skills   │
-                │ tools / sources   │
-                └─────────┬─────────┘
-                          │
-              ┌───────────┼───────────┐
-              ▼           ▼           ▼
-           Agents       Skills       Tools
-              │
-              ▼
-       Dynamic Dispatcher
-              │
-       ┌──────┴───────┐
-       ▼              ▼
-   Sequential       Parallel
-       │              │
-       └──────┬───────┘
-              ▼
-        Evidence Store
-              │
-      gaps / conflicts
-              │
-              ▼
-       Follow-up research
-              │
-              ▼
-          Synthesis
-              │
-              ▼
-         Final response
+Agent Platform
+  Agents       Skills       Tools
+      \          |          /
+       Versioned YAML catalog
+                |
+         Capability Registry
+                |
+      Deep Agents Supervisor
+        task delegation only
+                |
+  +-------------+-------------+-------------+
+  |             |             |             |
+ Web         Academic      Company       Document
+ agent        agent         agent          agent
+  |             |             |             |
+owned tools   owned tool    owned tools   owned tools
+  +-------------+-------------+-------------+
+                |
+      evidence validation
+                |
+       Synthesis/Critic
+                |
+          cited answer
 ```
 
-## 3. Runtime Responsibilities
+Responsibilities:
 
-### LangGraph
+- Catalog defines identities, contracts, permissions, and ownership.
+- Registry loads, validates, discovers, and projects capabilities.
+- Supervisor selects named specialists and composes results.
+- Deep Agents provides delegation and subagent execution contexts.
+- Tool runtime binds declared tools to fixture/live Python adapters.
+- Existing evidence code validates claims, citations, gaps, and conflicts.
+- LangGraph/SQLite provides durable thread state beneath Deep Agents.
+- CLI and UI consume normalized `RunEvent` objects.
 
-Use LangGraph for:
+## 3. Catalog
 
-- State
-- Checkpoints
-- Durable execution
-- Run recovery
-- Human interruption
-- Session persistence
+Catalog is packaged under `src/research_assistant/catalog/`.
 
-Do not encode research workflow as fixed graph branches wherever possible.
-
-### Custom orchestration layer
-
-Implement small runtime responsible for:
-
-- Agent selection
-- Dynamic delegation
-- Parallel execution
-- Agent result collection
-- Evidence aggregation
-- Conflict/gap detection
-- Follow-up delegation
-- Live per-specialist model/tool loops
-- Maximum depth / concurrency / budget controls
-- Run event streaming
-
-Core loop:
-
-```python
-while not resolved:
-    decision = orchestrator.decide(state, capabilities)
-    actions = dispatcher.execute(decision)
-    state = update_state(state, actions)
+```text
+catalog/
+  agents/<agent-id>.yaml
+  skills/<skill-id>/skill.yaml
+  skills/<skill-id>/SKILL.md
+  tools/<tool-id>.yaml
 ```
 
-Each live action uses a bounded specialist loop rather than executing a fixed
-tool list blindly:
+### Agent schema
 
-```python
-while tool_budget_remaining:
-    result = execute(next_tool)
-    next_tool = model.choose_next_tool(result, allowed_tools)
-    if next_tool is None:
-        break
+```text
+Agent
+  id, version, description
+  model, system_prompt
+  skills[], tools[]
+  input_schema, output_schema
+  permissions[]
+  sources[], keywords[]
 ```
 
-The Python runtime executes tools and validates every model-selected tool,
-query, URL, token budget, and runtime limit. Invalid model output or provider
-failure ends that specialist safely. Fixture mode skips this model loop.
+`model: inherit` uses the runtime-selected model. Agent IDs and versions are
+stable durable-state inputs.
 
-## 4. Fixed Specialist Agents
+### Skill schema
 
-Start with 5 specialists.
+```text
+Skill
+  id, version, description
+  entrypoint
+  required_tools[]
+  keywords[]
+```
 
-### Web Research Agent
+`entrypoint` is `SKILL.md`. Optional `references/`, `scripts/`, and `assets/`
+belong to the skill and are loaded only when needed.
 
-Purpose:
+### Tool schema
 
-- General public-web research
-- Find relevant sources
-- Extract claims and supporting evidence
+```text
+Tool
+  id, version, description
+  execution
+  input_schema, output_schema
+  permissions[]
+  source_types[], keywords[]
+```
 
-Free tools:
+Allowed execution declarations are `python` and `mcp`. Only `python` binds in
+v1. Attempting to bind `mcp` fails with an explicit unsupported-execution
+error.
 
-- Search provider abstraction
-- HTTP fetch
-- HTML extraction
+### Registered contracts
 
-### Academic Research Agent
+- `ResearchTask`
+- `ResearchResult`
+- `SearchInput`
+- `UrlInput`
+- `DocumentInput`
+- `DocumentSearchInput`
+- `SourceRecords`
 
-Purpose:
+Schema names resolve through an explicit Pydantic contract map. Arbitrary
+imports from manifests are forbidden.
 
-- Research scientific / technical questions
+### Startup validation
 
-Sources:
+Registry rejects:
 
-- arXiv
-- Semantic Scholar where practical
-- Public papers/pages
+- malformed YAML or wrong top-level wrapper;
+- duplicate or mismatched file/manifest IDs;
+- invalid SemVer;
+- unknown agent, skill, tool, or schema references;
+- missing skill entrypoints;
+- a skill-required tool absent from its agent;
+- tool permissions absent from the owning agent;
+- unsupported permission names.
 
-Tools:
+Registry exposes descriptions and contracts. It never exposes Python callables
+to supervisor prompts.
 
-- arXiv API
-- HTTP fetch
-- PDF/text extraction
+## 4. Agents and ownership
 
-### Company / Financial Research Agent
+### `web_researcher`
 
-Purpose:
+- Skill: `web_research`
+- Tools: `web_search`, `fetch_url`
+- Permission: `network`
+- Purpose: current public-web evidence.
 
-- Company research
-- Financial information
-- Regulatory filings
+### `academic_researcher`
 
-Sources:
+- Skill: `academic_research`
+- Tool: `fetch_arxiv`
+- Permission: `network`
+- Purpose: scholarly sources and reported research.
 
-- SEC EDGAR
-- Company investor-relations pages
-- Public filings
+### `company_researcher`
 
-Tools:
+- Skill: `company_research`
+- Tools: `fetch_sec`, `web_search`
+- Permission: `network`
+- Purpose: company, financial, and regulatory evidence.
 
-- SEC API / EDGAR endpoints
-- HTTP fetch
-- Document extraction
+### `document_researcher`
 
-### Document Research Agent
+- Skill: `document_research`
+- Tools: `read_document`, `search_document`
+- Permission: `document_read`
+- Purpose: supplied Markdown/plain-text evidence.
 
-Purpose:
+### `synthesis_critic`
 
-- Search and reason over user-provided documents
+- Skills: `evidence_critique`, `synthesis`
+- Tools: none
+- Permissions: none
+- Purpose: check support, detect gaps/conflicts, and write cited output.
 
-Tools:
+Custom subagents receive explicit tool lists. They do not inherit supervisor
+tools. Supervisor has no application research tools and cannot call specialist
+tools by name.
 
-- Local file loader
-- PDF/text extraction
-- Document search
+## 5. Tool runtime
 
-### Synthesis / Critic Agent
-
-Purpose:
-
-- Compare findings
-- Detect unsupported claims
-- Detect contradictory evidence
-- Identify unanswered questions
-- Recommend next research step
-
-This agent should **not** be responsible for broad discovery.
-
-## 5. Tools
-
-Keep tool set deliberately small.
-
-### Core tools
+Python adapters preserve existing behavior:
 
 ```text
 web_search(query)
 fetch_url(url)
 fetch_arxiv(query)
 fetch_sec(query)
-read_document(path)
-search_document(query)
+read_document(paths)
+search_document(query, paths)
 ```
 
-Optional:
+Rules:
+
+- Fixture mode uses deterministic source records and no network.
+- Live web search uses a Tavily-compatible endpoint.
+- URL fetch accepts absolute HTTP(S) URLs and bounded responses.
+- arXiv and SEC use public endpoints with timeouts.
+- SEC requests identify the application through `SEC_USER_AGENT`.
+- Documents are bounded Markdown or plain text.
+- PDF, DOCX, and spreadsheet extraction is deferred.
+- Tool output is compact structured source records, not unbounded page text.
+- Existing query cleanup, extraction, validation, and timeout behavior remains.
+
+## 6. Deep Agents orchestration
+
+Runtime constructs one supervisor with registry-generated custom subagent
+specifications. The supervisor prompt contains agent ID, description, and
+input/output contract. Tool implementation details stay outside its context.
+
+Supervisor may:
+
+- delegate one task to one specialist;
+- issue independent task calls concurrently;
+- inspect specialist summaries while collecting validated structured tool records;
+- request bounded follow-up research;
+- delegate evidence review/synthesis.
+
+Supervisor may not:
+
+- invoke research tools directly;
+- invent agent or tool IDs;
+- grant a subagent undeclared tools or permissions;
+- create recursive subagent hierarchies;
+- bypass runtime policy.
+
+One delegation level is sufficient for v1. Deep Agents filesystem, long-term
+memory, recursive delegation, and human-approval features are deferred.
+
+## 7. Fixture and live models
+
+Fixture mode uses a scripted LangChain tool-calling model. It drives the same
+Deep Agents supervisor/subagent path, returns deterministic delegations, makes
+no provider calls, and preserves fixture-specific citations.
+
+Live mode uses a LangChain-compatible OpenAI chat model selected through
+`OPENAI_MODEL` and `OPENAI_BASE_URL`. Model output never authorizes undeclared
+tools. Runtime validates delegation targets, tool inputs, results, and limits.
+
+## 8. Evidence and output
+
+Specialists return `ResearchResult` containing findings and errors. Accepted
+findings retain:
 
 ```text
-extract_pdf(path)
-calculate(expression)
+claim, source, source_type, evidence, confidence,
+citation, topic, entities, time_period
 ```
 
-Tools should perform concrete actions.
+Post-processing preserves:
 
-Avoid exposing large numbers of narrowly differentiated tools.
+- incomplete/noisy claim rejection;
+- topic and implementation relevance checks;
+- duplicate claim/source merging;
+- conflict and evidence-gap detection;
+- source IDs and Markdown citation formatting;
+- grounded live synthesis validation;
+- deterministic fixture Markdown.
 
-Live search adapters receive concise queries rather than orchestration instructions. Newline-delimited directives and follow-up metadata are removed before Tavily or arXiv calls. Fixture search keeps the original deterministic matching behavior.
+Partial specialist failure does not discard successful independent findings.
 
-## 6. Skills
+## 9. Runtime policy
 
-Skills represent reusable procedures rather than capabilities.
-
-Initial skills:
+Defaults:
 
 ```text
-general_research
-source_evaluation
-company_research
-literature_review
-document_analysis
-evidence_reconciliation
-report_writing
+max_parallel_agents = 3
+max_total_agents = 12
+max_research_depth = 5
+max_runtime_seconds = 180
+max_tool_calls_per_agent = 8
+max_tokens_per_run = 32000
 ```
 
-Example:
+Policy covers supervisor task calls and specialist tool calls. Exhausted or
+invalid operations fail closed and emit normalized errors.
+
+## 10. Durability
+
+New checkpoint default:
 
 ```text
-company_research
-  1. identify primary sources
-  2. retrieve filings
-  3. extract relevant metrics
-  4. compare periods
-  5. identify inconsistencies
-  6. return claims + citations
+.research-assistant/checkpoints.deepagents.sqlite
 ```
 
-Skills should be progressively discoverable rather than permanently placed in every agent context.
+Durable state includes a persisted run-state record plus a fingerprint of
+resolved manifest IDs and versions. Deep Agents checkpoints share the same
+SQLite file; resume requires the run-state record and matching catalog
+fingerprint.
 
-## 7. Capability Registry
+Legacy `.research-assistant/checkpoints.sqlite` custom-graph state is not
+migrated. Resume returns a clear incompatibility error. `--pause-after-turn`
+lets the current Deep Agents delegated research turn complete, persists its
+validated evidence, and defers synthesis. Resume synthesizes saved evidence;
+it does not continue or invoke another supervisor turn.
 
-Create registry containing:
+## 11. Events and interfaces
 
-```python
-AgentSpec(
-    name="company_researcher",
-    description="Research companies using primary financial/regulatory sources",
-    sources=["SEC", "company filings"],
-    skills=["company_research"],
-    core_tools=["fetch_sec", "fetch_url"],
-)
-```
-
-Similar `SkillSpec` and `ToolSpec`.
-
-Registry supports:
-
-```text
-discover_agents(query)
-discover_skills(query)
-discover_tools(query)
-```
-
-Do not place every agent, skill, and tool definition into orchestrator context.
-
-## 8. Dynamic Delegation
-
-The initial plan may split a multi-topic question into independent, topic-scoped actions. The prototype currently recognizes architecture/implementation and competitor/comparison topics. Each action carries its topic into evidence collection and final Markdown sections.
-
-Orchestrator should be able to produce plans like:
-
-```text
-Task
- ↓
-Web Research Agent
- ↓
-Company Research Agent
- ↓
-compare findings
- ↓
-conflict detected
- ↓
-SEC Research Agent
- ↓
-Synthesis Agent
-```
-
-Or:
-
-```text
-Task
- ↓
-parallel:
-    Academic Agent
-    Web Agent
-    Document Agent
- ↓
-Synthesis Agent
-```
-
-Or:
-
-```text
-Task
- ↓
-Document Agent
- ↓
-gap identified
- ↓
-Web Agent
- ↓
-follow-up
- ↓
-Synthesis
-```
-
-No fixed maximum number of research hops beyond runtime safety limits.
-
-Topic follow-ups target the missing topic. A generic source-category gap must not route a topic-specific question to an unrelated academic search.
-
-## 9. Evidence Model
-
-Every research result should return structured evidence.
-
-```python
-Finding(
-    claim=str,
-    source=str,
-    source_type=str,
-    evidence=str,
-    confidence=float,
-    citation=str | None,
-    topic=str | None,
-    entities=list[str],
-    time_period=str | None,
-)
-```
-
-Before storage, findings pass bounded quality checks. Fragmentary or obvious repeated-text claims are rejected. Architecture findings require the requested subject and implementation vocabulary. Competitor findings require a named competitor in the title or claim and recommendation-system implementation vocabulary in the claim.
-
-Maintain:
-
-```text
-EvidenceStore
-  ├── findings
-  ├── sources
-  ├── claims
-  ├── contradictions
-  └── unanswered_questions
-```
-
-This gives orchestrator structured material for subsequent reasoning.
-
-## 10. Multi-Hop Behavior
-
-Prototype must demonstrate:
-
-### Hop 1
-
-Research primary question.
-
-### Hop 2
-
-Inspect findings and identify:
-
-- missing evidence
-- contradiction
-- ambiguity
-- weak source
-
-### Hop 3
-
-Delegate targeted investigation.
-
-### Hop 4
-
-Reconcile evidence.
-
-### Hop 5
-
-Synthesize answer.
-
-Example:
-
-```text
-"What caused Company X margin decline?"
-
-Company Agent
-    ↓
-finds margin decline
-
-SEC Agent
-    ↓
-finds reported cost increase
-
-Transcript Agent / Web Agent
-    ↓
-management gives different explanation
-
-Critic
-    ↓
-detects discrepancy
-
-SEC Agent
-    ↓
-verify accounting detail
-
-Synthesis
-    ↓
-final explanation + citations
-```
-
-## 11. Parallelism
-
-Dispatcher must support:
-
-```python
-parallel([
-    delegate("web_researcher", task1),
-    delegate("company_researcher", task2),
-    delegate("academic_researcher", task3),
-])
-```
-
-Parallelism should be selected by orchestrator when tasks are independent.
-
-Runtime controls:
-
-```text
-max_parallel_agents
-max_total_agents
-max_research_depth
-max_runtime
-max_tokens
-```
-
-## 12. Web UI
-
-Build minimal UI.
-
-### Backend
-
-FastAPI + WebSocket.
-
-### Frontend
-
-Small web UI showing live execution.
-
-Example:
-
-```text
-Researching...
-│
-├─ Orchestrator: planning
-├─ Company Researcher: searching SEC
-├─ Web Researcher: searching investor relations
-├─ Company Researcher: found 10-K
-├─ Orchestrator: conflict detected
-├─ SEC Researcher: verifying claim
-├─ Critic: evidence reconciled
-└─ Synthesis: drafting answer
-```
-
-WebSocket event schema:
-
-```python
-RunEvent(
-    run_id,
-    timestamp,
-    event_type,
-    agent,
-    task,
-    status,
-    result_summary,
-)
-```
-
-Event types:
+`ResearchRuntime.run/resume`, CLI flags, Markdown output, JSONL, and WebSocket
+consumers remain compatibility surfaces. Deep Agents stream data maps to:
 
 ```text
 run_started
 planning
+parallel_started
 agent_started
 tool_started
 tool_finished
 agent_finished
-parallel_started
 evidence_added
 conflict_detected
 followup_started
 synthesis_started
 run_finished
+error
 ```
 
-## 13. Model Agnosticism
+`run_started` is first. Successful runs end with `run_finished`, followed by
+the UI's final `answer` message. UI contains no orchestration logic.
 
-No provider-specific orchestration logic.
+## 12. Testing
 
-Use model abstraction supporting:
+Required offline tests cover:
 
-```text
-orchestrator_model
-specialist_model
-critic_model
-```
+- valid and invalid catalog loading;
+- unresolved references, permissions, schemas, and missing `SKILL.md`;
+- capability discovery from manifests;
+- supervisor isolation from research tools;
+- specialist tool and skill ownership;
+- adding an agent manifest without supervisor edits;
+- deterministic fixture execution through Deep Agents;
+- mocked live delegation and structured tool results;
+- parallelism, limits, timeouts, and partial failures;
+- evidence validation and grounded citations;
+- normalized CLI/UI event ordering;
+- SQLite pause/resume and catalog fingerprint checks;
+- clear legacy checkpoint rejection.
 
-Allow different models later.
+Unit tests never call live services. Use `tmp_path`, `monkeypatch`,
+`httpx.MockTransport`, and FastAPI `TestClient`.
 
-Prototype should work with any LangChain-compatible chat model.
+## 13. Non-goals
 
-## 14. Prototype Success Criteria
-
-Use 10 representative questions covering:
-
-1. Simple factual question
-2. Multi-source research question
-3. Company research
-4. Academic question
-5. User-document + web research
-6. Contradictory sources
-7. Multi-hop question
-8. Question requiring parallel investigation
-9. Question requiring follow-up after evidence gap
-10. Document/report generation
-
-Compare dynamic system against fixed workflow.
-
-Measure:
-
-```text
-accuracy
-citation quality
-source quality
-claim relevance and completeness
-query quality
-number of useful research hops
-unnecessary tool calls
-parallelization quality
-conflict detection
-unanswered questions
-latency
-token cost
-```
-
-Primary success criterion:
-
-> Different questions should produce meaningfully different execution paths without developer-defined workflow branches.
-
-## 15. Non-Goals
-
-Do not build initially:
-
-- Large agent marketplace
-- Hundreds of tools
-- Complex memory architecture
-- Autonomous browser computer-use
-- Paid proprietary research APIs
-- Production authentication/permissions
-- Fully autonomous external actions
-- Complex frontend
-- Sophisticated reinforcement learning
-
-## 16. Recommended Prototype Principle
-
-Keep distinction strict:
-
-```text
-Tool
-= action
-
-Skill
-= procedure / knowledge
-
-Subagent
-= independent reasoning context
-
-Orchestrator
-= decides which capabilities to compose
-
-LangGraph
-= durable execution infrastructure
-```
-
-Do not optimize upfront for perfect tool/skill bundling.
-
-Instead implement **progressive capability discovery** and collect execution traces. Use traces from prototype runs to determine which tools belong permanently inside specialist agents versus which should remain discoverable.
-
-## 17. Main Experiment
-
-Run same question set through:
-
-```text
-A. Fixed LangGraph research workflow
-
-B. Dynamic orchestrator
-   + fixed specialist agents
-   + capability registry
-   + dynamic delegation
-   + parallel execution
-   + evidence store
-   + multi-hop follow-up
-```
-
-The prototype succeeds when B can discover and execute different research strategies based on task requirements, while remaining observable, bounded, and recoverable.
-
-### Useful reference architecture
-
-Deep Agents remains a future comparison point, not a current dependency. The prototype now has a smaller bounded live specialist loop while retaining custom evidence validation and runtime safety. Reconsider Deep Agents after evaluation shows that its filesystem context management, recursive delegation, memory, or built-in planning materially improves measured results.
+- MCP execution in v1.
+- Recursive agent trees.
+- Large marketplace or remote catalog.
+- Arbitrary manifest imports.
+- Complex memory architecture.
+- Production auth or external database.
+- Browser computer use.
+- Autonomous external actions.
+- Legacy checkpoint migration.

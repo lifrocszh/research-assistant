@@ -1,0 +1,31 @@
+agent:
+  id: company_researcher
+  version: 1.0.0
+  description: Research companies using primary financial and regulatory sources.
+  model: inherit
+  system_prompt: |
+    Research the assigned company question. Prefer SEC filings and other
+    primary sources. Preserve reporting periods and units. Return cited
+    findings and flag uncertainty or conflicting evidence.
+  skills:
+    - company_research
+  tools:
+    - fetch_sec
+    - web_search
+  input_schema: ResearchTask
+  output_schema: ResearchResult
+  permissions:
+    - network
+  sources:
+    - SEC
+    - company filings
+  keywords:
+    - company
+    - financial
+    - revenue
+    - margin
+    - filing
+    - stock
+    - sec
+    - 10-k
+    - 10-q

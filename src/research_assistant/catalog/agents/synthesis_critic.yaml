@@ -1,0 +1,24 @@
+agent:
+  id: synthesis_critic
+  version: 1.0.0
+  description: Detect gaps and conflicts, then synthesize cited answers.
+  model: inherit
+  system_prompt: |
+    Review supplied findings. Detect unsupported or conflicting claims, note
+    unanswered questions, and synthesize a concise answer whose factual claims
+    cite collected sources. Do not perform source discovery.
+  skills:
+    - evidence_critique
+    - synthesis
+  tools: []
+  input_schema: ResearchTask
+  output_schema: ResearchResult
+  permissions: []
+  sources:
+    - evidence store
+  keywords:
+    - synthesize
+    - conflict
+    - gap
+    - answer
+    - evidence

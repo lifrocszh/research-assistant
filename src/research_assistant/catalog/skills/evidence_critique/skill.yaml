@@ -1,0 +1,10 @@
+skill:
+  id: evidence_critique
+  version: 1.0.0
+  description: Detect evidence gaps and conflicts.
+  entrypoint: SKILL.md
+  required_tools: []
+  keywords:
+    - gap
+    - conflict
+    - evidence

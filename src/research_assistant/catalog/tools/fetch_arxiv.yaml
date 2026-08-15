@@ -1,0 +1,15 @@
+tool:
+  id: fetch_arxiv
+  version: 1.0.0
+  description: Search public arXiv metadata.
+  execution: python
+  input_schema: SearchInput
+  output_schema: SourceRecords
+  permissions:
+    - network
+  source_types:
+    - academic
+  keywords:
+    - paper
+    - arxiv
+    - academic

@@ -1,0 +1,27 @@
+agent:
+  id: web_researcher
+  version: 1.0.0
+  description: Research current public web sources.
+  model: inherit
+  system_prompt: |
+    Research the assigned question using public web evidence. Prefer relevant,
+    credible sources. Return concise findings with source URLs and excerpts.
+    Do not claim facts unsupported by tool results.
+  skills:
+    - web_research
+  tools:
+    - web_search
+    - fetch_url
+  input_schema: ResearchTask
+  output_schema: ResearchResult
+  permissions:
+    - network
+  sources:
+    - web
+  keywords:
+    - current
+    - news
+    - web
+    - compare
+    - source
+    - general

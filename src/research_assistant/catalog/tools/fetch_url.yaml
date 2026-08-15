@@ -1,0 +1,15 @@
+tool:
+  id: fetch_url
+  version: 1.0.0
+  description: Fetch a bounded HTTP page.
+  execution: python
+  input_schema: UrlInput
+  output_schema: SourceRecords
+  permissions:
+    - network
+  source_types:
+    - web
+  keywords:
+    - url
+    - web
+    - page

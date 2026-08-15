@@ -68,7 +68,7 @@ PAGE = """<!doctype html>
     * { box-sizing: border-box; }
     body { margin: 0; min-width: 320px; background: var(--bg-primary); }
     button, textarea, select { font: inherit; }
-    .shell { max-width: 1480px; min-height: 100vh; margin: auto; padding: 22px clamp(16px, 4vw, 56px); }
+    .shell { max-width: 980px; min-height: 100vh; margin: auto; padding: 22px clamp(16px, 4vw, 40px); }
     .topbar { display: flex; justify-content: space-between; align-items: center; gap: 18px; padding: 4px 0 24px; }
     .brand { display: flex; align-items: center; gap: 10px; color: var(--text-primary); font-size: .95rem; font-weight: 750; }
     .brand-mark { display: grid; width: 28px; height: 28px; place-items: center; border-radius: 9px; background: var(--text-primary); color: var(--bg-primary); font-size: .82rem; }
@@ -84,22 +84,25 @@ PAGE = """<!doctype html>
     .dot.ready { background: var(--success); }
     .dot.failed { background: var(--danger); }
     .research-frame { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 22px; min-height: calc(100vh - 92px); }
-    .research-intro { padding: 22px 2px 0; }
-    .research-intro p { max-width: 650px; margin-top: 16px; color: var(--text-secondary); line-height: 1.6; }
-    .workspace { display: grid; grid-template-columns: minmax(215px, 250px) minmax(0, 1fr); gap: 22px; height: min(720px, calc(100vh - 380px)); min-height: 520px; }
-    .activity-rail, .report-panel, .question-form { border: 1px solid var(--border); background: var(--bg-surface); box-shadow: var(--shadow); }
-    .activity-rail, .report-panel { min-height: 0; border-radius: 20px; overflow: hidden; }
-    .activity-rail { display: flex; flex-direction: column; }
-    .rail-header, .report-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 20px 20px 17px; border-bottom: 1px solid var(--border); }
-    .progress { padding: 15px 20px 12px; border-bottom: 1px solid var(--border); }
-    .progress-item { display: flex; align-items: center; gap: 9px; padding: 6px 0; color: var(--text-muted); font-size: .78rem; }
-    .progress-item.active { color: var(--text-primary); }
-    .progress-item.done { color: var(--success); }
-    .progress-mark { width: 7px; height: 7px; border: 1px solid currentColor; border-radius: 50%; }
-    .progress-item.active .progress-mark { background: var(--accent); border-color: var(--accent); box-shadow: 0 0 7px rgb(36 119 212 / .45); }
-    .progress-item.done .progress-mark { background: currentColor; }
-    .progress-value { margin-left: auto; color: var(--text-muted); font-size: .7rem; }
-    #events { flex: 1; min-height: 0; margin: 0; padding: 9px 12px 14px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; scrollbar-width: thin; list-style: none; }
+    .research-intro { padding: 30px 2px 4px; text-align: center; }
+    .research-intro p { max-width: 580px; margin: 12px auto 0; color: var(--text-secondary); line-height: 1.6; }
+    .workspace { min-height: 420px; }
+    .report-panel, .question-form { border: 1px solid var(--border); background: var(--bg-surface); box-shadow: var(--shadow); }
+    .report-panel { min-height: 420px; border-radius: 20px; }
+    .conversation-panel { padding: clamp(22px, 5vw, 50px); }
+    .message { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 14px; }
+    .user-message { margin-bottom: 34px; }
+    .user-message::before { display: grid; width: 32px; height: 32px; place-items: center; border-radius: 50%; background: var(--bg-muted); color: var(--text-secondary); content: "You"; font-size: .62rem; font-weight: 800; }
+    .user-question { margin: 4px 0 0; color: var(--text-primary); line-height: 1.55; }
+    .assistant-avatar { display: grid; width: 32px; height: 32px; place-items: center; border-radius: 9px; background: var(--text-primary); color: var(--bg-primary); font-size: .76rem; font-weight: 800; }
+    .assistant-content { min-width: 0; }
+    .assistant-status { display: flex; align-items: center; gap: 9px; min-height: 32px; color: var(--text-secondary); font-size: .82rem; }
+    .live-dot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: var(--text-muted); }
+    .live-dot.running { background: var(--accent); box-shadow: 0 0 8px rgb(36 119 212 / .45); }
+    .activity-details { margin-top: 24px; border-top: 1px solid var(--border); }
+    .activity-details summary { display: flex; justify-content: space-between; gap: 12px; padding: 14px 2px 4px; color: var(--text-secondary); font-size: .78rem; font-weight: 700; cursor: pointer; }
+    .activity-details[open] summary { color: var(--text-primary); }
+    #events { max-height: 320px; margin: 6px 0 0; padding: 4px 0 8px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; scrollbar-width: thin; list-style: none; }
     .event { position: relative; display: grid; grid-template-columns: 15px 1fr; gap: 9px; padding: 10px 8px; border-radius: 10px; }
     .event:hover { background: var(--bg-selected); }
     .event:not(:last-child)::before { position: absolute; top: 22px; bottom: -10px; left: 14px; width: 1px; background: var(--border); content: ""; }
@@ -113,12 +116,9 @@ PAGE = """<!doctype html>
     .event-summary { margin-top: 3px; color: var(--text-secondary); font-size: .75rem; line-height: 1.4; }
     .event-time { display: block; margin-top: 4px; color: var(--text-muted); font-size: .68rem; }
     .empty { padding: 22px 2px; color: var(--text-muted); font-size: .8rem; line-height: 1.5; }
-    .report-panel { display: flex; flex-direction: column; }
-    .report-header { align-items: center; }
-    .report-title { max-width: 70ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .answer { flex: 1; min-height: 0; max-width: 900px; padding: 34px clamp(22px, 5vw, 68px) 54px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; scrollbar-width: thin; color: var(--text-primary); line-height: 1.72; }
-    #events::-webkit-scrollbar, .answer::-webkit-scrollbar { width: 8px; }
-    #events::-webkit-scrollbar-thumb, .answer::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 999px; background: var(--border); background-clip: padding-box; }
+    .answer { padding-top: 18px; color: var(--text-primary); line-height: 1.72; }
+    #events::-webkit-scrollbar { width: 8px; }
+    #events::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 999px; background: var(--border); background-clip: padding-box; }
     .answer h1 { margin: 0 0 22px; font-size: 1.8rem; letter-spacing: -.035em; }
     .answer h2 { margin: 28px 0 10px; font-size: 1.08rem; }
     .answer h3 { margin: 20px 0 8px; font-size: .98rem; }
@@ -139,11 +139,10 @@ PAGE = """<!doctype html>
     button:hover:not(:disabled) { background: var(--accent-hover); transform: translateY(-1px); }
     button:disabled { cursor: wait; opacity: .55; }
     .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+    [hidden] { display: none !important; }
     @media (max-width: 900px) {
       .shell { padding: 18px 14px; }
-      .workspace { grid-template-columns: 1fr; height: auto; min-height: 0; }
-      .activity-rail { max-height: 280px; }
-      .report-panel { min-height: 520px; }
+      .workspace, .report-panel { min-height: 0; }
       .research-frame { min-height: 0; }
     }
     @media (max-width: 560px) {
@@ -151,6 +150,7 @@ PAGE = """<!doctype html>
       .brand-badge { display: none; }
       .run-state { flex-wrap: wrap; justify-content: flex-end; }
       h1 { font-size: 2.2rem; }
+      .conversation-panel { padding: 22px 18px; }
       .prompt-controls { align-items: stretch; flex-direction: column; }
       select, button { max-width: none; width: 100%; }
     }
@@ -165,35 +165,34 @@ PAGE = """<!doctype html>
     <section class="research-frame">
       <header class="research-intro">
         <p class="eyebrow">Research workspace</p>
-        <h1>Ask a question. Get a grounded report.</h1>
-        <p>Research runs stay visible while they work. Follow planning, delegated agents, tools, and evidence before reviewing the final answer.</p>
+        <h1>What can I research for you?</h1>
+        <p>Agents inspect sources, show their work, and return a cited answer.</p>
       </header>
       <section class="workspace">
-        <aside class="activity-rail" aria-label="Live research activity">
-          <div class="rail-header"><div><p class="eyebrow">Live run</p><h2>Research activity</h2></div><span id="event-count" class="meta">0 events</span></div>
-          <div class="progress" aria-label="Research progress">
-            <div class="progress-item" data-progress="plan"><span class="progress-mark"></span><span>Plan</span><span class="progress-value">—</span></div>
-            <div class="progress-item" data-progress="agents"><span class="progress-mark"></span><span>Agents</span><span class="progress-value">—</span></div>
-            <div class="progress-item" data-progress="tools"><span class="progress-mark"></span><span>Tools</span><span class="progress-value">—</span></div>
-            <div class="progress-item" data-progress="evidence"><span class="progress-mark"></span><span>Evidence</span><span class="progress-value">—</span></div>
-            <div class="progress-item" data-progress="synthesis"><span class="progress-mark"></span><span>Synthesis</span><span class="progress-value">—</span></div>
+        <article class="report-panel conversation-panel" aria-label="Research conversation">
+          <div id="user-message" class="message user-message" hidden><p id="user-question" class="user-question"></p></div>
+          <div class="message assistant-message">
+            <span class="assistant-avatar" aria-hidden="true">R</span>
+            <div class="assistant-content">
+              <div class="assistant-status" role="status" aria-live="polite"><span id="activity-dot" class="live-dot"></span><span id="live-update">Ready when you are.</span></div>
+              <div id="answer" class="answer"><p class="placeholder">Ask a question to begin.</p></div>
+              <details id="activity-details" class="activity-details">
+                <summary><span>Research activity</span><span id="event-count" class="meta">0 steps</span></summary>
+                <ol id="events"><li class="empty">Delegated agents and tool calls appear here.</li></ol>
+              </details>
+            </div>
           </div>
-          <ol id="events"><li class="empty">Run a question to see planning, delegation, tool use, and evidence.</li></ol>
-        </aside>
-        <article class="report-panel" aria-label="Research report">
-          <div class="report-header"><div><p class="eyebrow">Grounded result</p><h2 id="report-title" class="report-title">Awaiting question</h2></div><span id="answer-mode" class="meta">Live: adaptive</span></div>
-          <div id="answer" class="answer"><p class="placeholder">Your cited findings and synthesized report will appear here when research completes.</p></div>
         </article>
       </section>
       <form id="run" class="question-form">
-        <label class="prompt-label" for="question">Research prompt</label>
+        <label class="sr-only" for="question">Research prompt</label>
         <textarea id="question" name="question" required rows="2" placeholder="What do you want to investigate?" autocomplete="off"></textarea>
         <div class="prompt-controls">
           <select id="mode" name="mode" aria-label="Research mode">
             <option value="live" selected>Live: adaptive model research</option>
             <option value="fixture">Fixture: offline, no LLM calls</option>
           </select>
-          <button id="submit" type="submit">Start research</button>
+          <button id="submit" type="submit">Research</button>
         </div>
       </form>
     </section>
@@ -202,35 +201,52 @@ PAGE = """<!doctype html>
     const form = document.querySelector('#run');
     const events = document.querySelector('#events');
     const answer = document.querySelector('#answer');
-    const reportTitle = document.querySelector('#report-title');
     const mode = document.querySelector('#mode');
-    const answerMode = document.querySelector('#answer-mode');
     const submit = document.querySelector('#submit');
     const state = document.querySelector('#run-state');
     const dot = document.querySelector('#state-dot');
+    const activityDot = document.querySelector('#activity-dot');
+    const liveUpdate = document.querySelector('#live-update');
+    const activityDetails = document.querySelector('#activity-details');
+    const userMessage = document.querySelector('#user-message');
+    const userQuestion = document.querySelector('#user-question');
     const elapsed = document.querySelector('#elapsed');
     const count = document.querySelector('#event-count');
-    const labels = { run_started: 'Run started', planning: 'Orchestrator planning', parallel_started: 'Parallel research', agent_started: 'Agent started', tool_started: 'Tool started', tool_finished: 'Tool finished', agent_finished: 'Agent finished', evidence_added: 'Evidence added', conflict_detected: 'Conflict detected', followup_started: 'Follow-up research', synthesis_started: 'Synthesizing', run_finished: 'Run finished', error: 'Run failed' };
-    const progressMap = { planning: 'plan', parallel_started: 'plan', agent_started: 'agents', agent_finished: 'agents', tool_started: 'tools', tool_finished: 'tools', evidence_added: 'evidence', conflict_detected: 'evidence', followup_started: 'agents', synthesis_started: 'synthesis', run_finished: 'synthesis' };
+    const labels = { run_started: 'Started', planning: 'Planning', parallel_started: 'Parallel delegation', agent_started: 'Delegated subagent', tool_started: 'Tool call', tool_finished: 'Tool result', agent_finished: 'Subagent complete', evidence_added: 'Evidence ready', conflict_detected: 'Conflict found', followup_started: 'Follow-up research', synthesis_started: 'Writing answer', run_finished: 'Finished', error: 'Failed' };
+    const delegatedAgents = new Set();
     let eventTotal = 0, startedAt, clock;
 
     function setState(text, tone = '') { state.textContent = text; dot.className = `dot ${tone}`; }
-    function stopRun(text, tone) { clearInterval(clock); submit.disabled = false; setState(text, tone); }
+    function stopRun(text, tone) { clearInterval(clock); submit.disabled = false; setState(text, tone); activityDot.className = `live-dot ${tone === 'failed' ? '' : tone}`; }
     function updateClock() { const seconds = Math.floor((Date.now() - startedAt) / 1000); elapsed.textContent = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`; }
-    function resetProgress() { document.querySelectorAll('[data-progress]').forEach(item => { item.className = 'progress-item'; item.querySelector('.progress-value').textContent = '—'; }); }
-    function updateProgress(eventType, status) {
-      const phase = progressMap[eventType];
-      if (!phase) return;
-      const item = document.querySelector(`[data-progress="${phase}"]`);
-      if (!item) return;
-      item.classList.add(status === 'finished' ? 'done' : 'active');
-      if (status === 'finished') item.classList.remove('active');
-      item.querySelector('.progress-value').textContent = status === 'finished' ? 'done' : 'live';
+    function readable(value) { return String(value || '').replaceAll('_', ' ').replace(/\\b\\w/g, letter => letter.toUpperCase()); }
+    function describeActivity(message) {
+      if (message.event_type === 'agent_started' && message.agent) delegatedAgents.add(message.agent);
+      const agent = readable(message.agent);
+      const tool = readable(message.task);
+      const records = message.result_summary?.match(/records=(\d+)/)?.[1];
+      const agents = [...delegatedAgents].map(readable).join(', ');
+      const descriptions = {
+        run_started: 'Starting research...',
+        planning: 'Choosing the best research specialists...',
+        parallel_started: 'Delegating independent research in parallel...',
+        agent_started: `Delegated to ${agent}.`,
+        tool_started: `${agent} is calling ${tool}...`,
+        tool_finished: message.status === 'failed' ? `${tool} failed. Trying available evidence...` : `${agent} reviewed ${records || 'new'} source records with ${tool}.`,
+        agent_finished: `${agent} finished its research.`,
+        evidence_added: `Context gathered${agents ? ` from ${agents}` : ''}. Checking citations...`,
+        conflict_detected: 'Found conflicting evidence. Resolving it...',
+        followup_started: 'A gap remains. Running follow-up research...',
+        synthesis_started: 'Enough context gathered. Writing the grounded answer...',
+        run_finished: 'Grounded answer ready.',
+        error: message.result_summary || 'Research failed.',
+      };
+      if (descriptions[message.event_type]) liveUpdate.textContent = descriptions[message.event_type];
     }
 
     function addEvent(message) {
       events.querySelector('.empty')?.remove();
-      eventTotal += 1; count.textContent = `${eventTotal} event${eventTotal === 1 ? '' : 's'}`;
+      eventTotal += 1; count.textContent = `${eventTotal} step${eventTotal === 1 ? '' : 's'}`;
       const item = document.createElement('li'); item.className = `event ${labels[message.event_type] ? message.event_type : ''}`;
       const mark = document.createElement('span'); mark.className = 'event-mark';
       const body = document.createElement('div');
@@ -241,8 +257,8 @@ PAGE = """<!doctype html>
       const detail = [message.agent, message.task, message.result_summary].filter(Boolean).join(' — ');
       if (detail) { const summary = document.createElement('p'); summary.className = 'event-summary'; summary.textContent = detail; body.append(title, summary); } else body.append(title);
       if (message.timestamp) { const time = document.createElement('time'); time.className = 'event-time'; time.textContent = new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); body.append(time); }
-      item.append(mark, body); events.append(item); item.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-      updateProgress(message.event_type, message.status);
+      item.append(mark, body); events.append(item);
+      describeActivity(message);
     }
 
     function inline(text) {
@@ -267,16 +283,16 @@ PAGE = """<!doctype html>
       event.preventDefault();
       const question = form.elements.question.value.trim();
       if (!question) return;
-      eventTotal = 0; events.replaceChildren(); count.textContent = '0 events';
-      resetProgress(); reportTitle.textContent = question; answer.innerHTML = '<p class="placeholder">Researching sources and reconciling evidence...</p>';
+      eventTotal = 0; delegatedAgents.clear(); events.replaceChildren(); count.textContent = '0 steps'; activityDetails.open = false;
+      userQuestion.textContent = question; userMessage.hidden = false; answer.innerHTML = '<p class="placeholder">Your grounded answer will appear here after sources and citations are checked.</p>';
+      liveUpdate.textContent = 'Starting research...'; activityDot.className = 'live-dot running';
       submit.disabled = true; startedAt = Date.now(); updateClock(); clearInterval(clock); clock = setInterval(updateClock, 1000); setState('Connecting', 'running');
       const socket = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
       const isLive = mode.value === 'live';
-      answerMode.textContent = isLive ? 'Live: adaptive' : 'Fixture: no LLM calls';
       socket.onopen = () => { setState(isLive ? 'Researching' : 'Running fixture', 'running'); socket.send(JSON.stringify({ question, mode: mode.value })); };
       socket.onmessage = event => {
         const message = JSON.parse(event.data);
-        if (message.event_type === 'answer') { renderMarkdown(message.final_answer); stopRun(message.status === 'paused' ? 'Paused' : 'Complete', 'ready'); return; }
+        if (message.event_type === 'answer') { renderMarkdown(message.final_answer); liveUpdate.textContent = message.status === 'paused' ? 'Research paused.' : 'Research complete.'; stopRun(message.status === 'paused' ? 'Paused' : 'Complete', 'ready'); return; }
         addEvent(message);
         if (message.event_type === 'error') { answer.innerHTML = `<p class="placeholder">${inline(message.result_summary || 'Run failed.')}</p>`; stopRun('Failed', 'failed'); }
       };
@@ -287,7 +303,7 @@ PAGE = """<!doctype html>
 </html>"""
 
 
-def create_app(checkpoint_path: str | Path = ".research-assistant/checkpoints.sqlite") -> FastAPI:
+def create_app(checkpoint_path: str | Path = ".research-assistant/checkpoints.deepagents.sqlite") -> FastAPI:
     app = FastAPI(title="Research Assistant")
     checkpoint = Path(checkpoint_path)
 

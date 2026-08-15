@@ -1,6 +1,15 @@
 # Research Assistant
 
-Python 3.12 prototype for bounded, durable, evidence-grounded research. LangGraph checkpoints generic research turns; a capability registry and custom orchestrator choose specialist agents and execution order at runtime. Live specialists can inspect each tool result and choose another registry-approved tool/query or finish.
+Python 3.12 prototype for bounded, durable, evidence-grounded research. A
+registry builds a Deep Agents supervisor from versioned agent, skill, and tool
+manifests. The supervisor sees specialist capabilities through Deep Agents'
+delegation tool. Research tools remain private to their owning specialists.
+
+```text
+question -> registry -> Deep Agents supervisor -> specialist -> owned tools
+                                      |              |
+                                      +----------- evidence -> synthesis
+```
 
 ## Setup
 
@@ -13,88 +22,164 @@ Create `.env` for live runs. Do not commit it.
 ```dotenv
 TAVILY_API_KEY=tvly-...
 OPENAI_API_KEY=...
-# Optional model and OpenAI-compatible API root.
+# Optional OpenAI-compatible model settings.
 # OPENAI_MODEL=gpt-5.6-terra
 # OPENAI_BASE_URL=https://api.openai.com/v1
-# Optional: use a compatible search endpoint instead of Tavily.
 # TAVILY_API_URL=https://api.tavily.com/search
-# Recommended for SEC requests: real product/contact identity.
 # SEC_USER_AGENT=YourName Research Assistant you@example.com
 ```
 
-## Run types
+## Run
 
-### Fixture: offline, deterministic
-
-Use this for development, tests, and repeatable demonstrations. It uses the built-in sample sources; it cannot answer current-news questions.
+Fixture mode is the CLI default. It uses deterministic sources plus a scripted
+LangChain tool-calling model. It executes the same registry, supervisor, and
+subagent path as live mode without network or model-provider calls.
 
 ```powershell
-# --mode fixture is the CLI default.
 uv run research-assistant run "What does LangGraph provide?"
-```
-
-Replace built-in records with a JSON fixture file:
-
-```powershell
 uv run research-assistant run "Compare Acme sources" --fixtures fixtures.json
 ```
 
-`fixtures.json` must be a JSON array. Each record needs `title`, `url`, `content`, and `source_type`; `claim` and `confidence` are optional.
+`fixtures.json` is a JSON array. Each record needs `title`, `url`, `content`,
+and `source_type`; `claim` and `confidence` are optional.
 
-### Live: current public-web research
-
-Use this for questions such as current news, recent model releases, or current company information. This is the adaptive path: model plans, reviews evidence, chooses follow-up work, and synthesizes. Within each specialist turn, tool results return to the model before the next bounded tool call. It requires both `TAVILY_API_KEY` for retrieval and `OPENAI_API_KEY` for planning, follow-up decisions, and synthesis.
-
-```powershell
-uv run --env-file .env research-assistant run "What are the latest AI model updates from frontier labs?" --mode live
-```
-
-Live search uses Tavily-compatible web search. Model calls use `OPENAI_MODEL` (default `gpt-5.6-terra`) through `OPENAI_BASE_URL` (default `https://api.openai.com/v1`). OpenAI-compatible providers must support `/chat/completions` and JSON response mode. Public arXiv and SEC lookups remain Python tools selected by the model. Set `SEC_USER_AGENT` to a real product/contact identity before company or filing research.
-
-Live runs incur OpenAI-compatible provider and Tavily usage costs. Runtime bounds cap agents, depth, tool calls, elapsed time, and approximate stored/model tokens; provider billing may count input tokens differently.
-
-### Local documents: add to either mode
-
-Documents provide extra evidence. The selected sources still follow the chosen mode. Supported files are Markdown and plain text.
+Live mode uses the configured OpenAI-compatible model and current public
+sources. It requires `OPENAI_API_KEY` and `TAVILY_API_KEY`.
 
 ```powershell
-# Offline document research
-uv run research-assistant run "Summarize the launch risks" --document notes.md
-
-# Document plus current web research
-uv run --env-file .env research-assistant run "Compare these notes with current reporting" --mode live --document notes.md
+uv run --env-file .env research-assistant run "Latest frontier model updates" --mode live
 ```
 
-PDF, DOCX, and spreadsheets are not supported yet.
+Live search uses a Tavily-compatible endpoint. Public arXiv and SEC access use
+Python tool adapters. Set `SEC_USER_AGENT` to a real product/contact identity
+before filing research.
+
+### Local documents
+
+Markdown and plain text are supported. PDF, DOCX, and spreadsheets remain
+unsupported.
+
+```powershell
+uv run research-assistant run "Summarize launch risks" --document notes.md
+uv run --env-file .env research-assistant run "Compare notes with current reporting" --mode live --document notes.md
+```
 
 ### Pause and resume
 
-Use a stable thread ID. The checkpoint database defaults to `.research-assistant/checkpoints.sqlite`.
+Use a stable thread ID. New Deep Agents checkpoints default to
+`.research-assistant/checkpoints.deepagents.sqlite`.
 
 ```powershell
 uv run research-assistant run "Research dynamic delegation" --thread demo --pause-after-turn
 uv run research-assistant resume demo
 ```
 
-### Save output and execution events
+`--pause-after-turn` lets one Deep Agents delegated research turn finish, saves
+its validated evidence, and defers synthesis. `resume` synthesizes that saved
+evidence; it does not invoke another supervisor turn.
+
+Legacy custom-graph checkpoints in `.research-assistant/checkpoints.sqlite`
+are not migrated. Attempting to resume one returns a clear incompatibility
+error. Start a new thread in the Deep Agents checkpoint store.
+
+### Output and events
 
 ```powershell
-uv run research-assistant run "Research Acme's margin decline" --jsonl events.jsonl --output answer.md
+uv run research-assistant run "Research Acme margin decline" --jsonl events.jsonl --output answer.md
 ```
 
-`--jsonl -` writes events to stdout. `--output` writes the final Markdown answer. Each run also writes a detailed timestamped log to `.research-assistant/logs/`; use `--log-dir PATH` to change that directory. Resuming a paused thread appends to its original log. Logs include the question, decisions, agent/task delegation, subtasks, tool inputs/results, findings, errors, and final answer. `--document` may be repeated. Run `research-assistant run --help` for bounds such as `--max-parallel-agents` and `--max-research-depth`.
+`--jsonl -` streams normalized `RunEvent` JSON to stdout. `--output` writes the
+final Markdown answer. Timestamped logs default to `.research-assistant/logs/`.
+The CLI and WebSocket UI share the same event contract.
 
-## CLI
+## Architecture
 
-The CLI defaults to fixture mode: fully offline, deterministic, and zero LLM calls. Use `--mode live` for adaptive model-guided research.
-
-```powershell
-# Fixture
-uv run research-assistant run "What does LangGraph provide?"
-
-# Live
-uv run --env-file .env research-assistant run "Current research question" --mode live
+```text
+CLI / WebSocket UI
+        |
+        v
+ResearchRuntime (run state, limits, events, evidence, SQLite checkpoints)
+        |
+        +---- CapabilityRegistry <---- versioned agent / skill / tool manifests
+        |
+        v
+DeepAgentPlatform
+        |
+        v
+Deep Agents supervisor (no application research tools)
+        |
+        +---- task(name=..., task=...) ---- registered subagent
+                                              |-- SKILL.md instructions
+                                              `-- explicitly owned tools
+                                                       |
+                                                       v
+                                              fixture / live source adapters
 ```
+
+Main components:
+
+- `catalog/` is source of truth for agent capabilities, skill instructions,
+  tool schemas, permissions, and ownership.
+- `registry.py` loads and validates catalog, then exposes capability projections.
+  Supervisor sees descriptions and names, not tool implementations.
+- `platform.py` builds Deep Agents supervisor and every registered subagent.
+  Supervisor receives `tools=[]`; Deep Agents supplies its `task` delegation tool.
+  Each subagent receives only tools and skill paths declared by its manifest.
+- `tools.py` implements deterministic fixture and live source adapters.
+  `RunToolRuntime` in `platform.py` wraps them as run-scoped LangChain tools and
+  enforces agent, tool-call, and runtime limits.
+- `engine.py` owns run/resume lifecycle, evidence normalization, conflict checks,
+  cited synthesis fallback, `RunEvent` emission, and SQLite persistence.
+- `models.py` defines manifests, runtime state, evidence, limits, and event schemas.
+- `cli.py` and `ui.py` are transport layers over `ResearchRuntime`; neither
+  contains orchestration logic.
+
+Fixture and live modes use the same Deep Agents graph. Fixture mode swaps in a
+deterministic chat model and offline source adapter; live mode uses the configured
+OpenAI-compatible model and network adapters.
+
+## Agent catalog
+
+Packaged source-of-truth lives under `src/research_assistant/catalog/`:
+
+```text
+catalog/
+  agents/*.yaml
+  skills/<skill-id>/skill.yaml
+  skills/<skill-id>/SKILL.md
+  tools/*.yaml
+```
+
+The registry validates SemVer, unique IDs, schema references, required tools,
+and permissions at startup. It exposes capability descriptions to the
+supervisor, while the runtime keeps Python implementations private.
+
+| Subagent | Responsibility | Skills | Owned tools | Permission / source |
+| --- | --- | --- | --- | --- |
+| `web_researcher` | Current public-web research and source verification | `web_research` | `web_search`, `fetch_url` | network / web |
+| `academic_researcher` | Scholarly-paper discovery and assessment | `academic_research` | `fetch_arxiv` | network / arXiv |
+| `company_researcher` | Company research led by primary regulatory evidence | `company_research` | `fetch_sec`, `web_search` | network / SEC filings |
+| `document_researcher` | Search user-provided Markdown and text files | `document_research` | `read_document`, `search_document` | document read / local files |
+| `synthesis_critic` | Detect evidence gaps and conflicts; produce cited synthesis | `evidence_critique`, `synthesis` | none | none / evidence store |
+
+All subagents inherit configured run model and use `ResearchTask` input plus
+`ResearchResult` output schemas. Skills map to packaged `SKILL.md` files:
+
+- `web_research`: search and verify public web evidence.
+- `academic_research`: find and assess scholarly sources.
+- `company_research`: prioritize filings and primary company evidence.
+- `document_research`: find evidence in user-provided local text.
+- `evidence_critique`: detect evidence gaps and conflicts; requires no tool.
+- `synthesis`: write an evidence-grounded cited answer; requires no tool.
+
+The supervisor owns no application research tools. It selects named subagents
+from registry-provided descriptions. Independent delegations may run in
+parallel within runtime limits.
+
+Adding an agent or skill requires catalog content, not supervisor changes.
+Adding a Python tool requires its adapter plus manifest, still no supervisor
+change. Tool manifests accept `execution: mcp`, but MCP execution is explicitly
+unsupported in v1 and fails clearly at binding time.
 
 ## Web UI
 
@@ -102,32 +187,33 @@ uv run --env-file .env research-assistant run "Current research question" --mode
 uv run --env-file .env uvicorn research_assistant.ui:app --reload
 ```
 
-Open `http://127.0.0.1:8000`. Choose **Live: adaptive model research** for model-guided research, or **Fixture: offline, no LLM calls** for deterministic local runs. The page defaults to live mode and presents a research workspace with progress activity beside the rendered final report. Live mode needs `TAVILY_API_KEY` and `OPENAI_API_KEY`; without them, the run reports a clear error. Use the CLI for custom fixtures, documents, and resume runs.
+Open `http://127.0.0.1:8000`. The UI defaults to live mode. One conversation
+surface streams concise planning, delegation, tool, evidence, and synthesis
+updates while research runs. Full normalized events stay in a collapsed
+`Research activity` trace. Final cited answer appears after evidence validation.
+Use the CLI for custom fixtures, documents, pause, and resume workflows.
 
 ## Runtime settings
 
-Optional environment variables:
+- `OPENAI_MODEL`: OpenAI-compatible chat model. Default `gpt-5.6-terra`.
+- `OPENAI_BASE_URL`: compatible API root. Default `https://api.openai.com/v1`.
+- `TAVILY_API_URL`: Tavily-compatible search endpoint.
+- `SEC_USER_AGENT`: SEC product/contact identity.
 
-- `OPENAI_MODEL`: OpenAI-compatible chat model. Defaults to `gpt-5.6-terra`.
-- `OPENAI_BASE_URL`: OpenAI-compatible API root. Defaults to `https://api.openai.com/v1`.
-- `TAVILY_API_URL`: Tavily-compatible search endpoint. Defaults to Tavily.
-- `SEC_USER_AGENT`: SEC-compliant product/contact user agent.
+Default bounds: 3 parallel agents, 12 total delegations, depth 5, 180 seconds,
+8 tool calls per specialist, and 32,000 approximate tokens. Policy enforcement
+applies to supervisor and subagent execution and fails closed.
 
-Checkpoints default to `.research-assistant/checkpoints.sqlite`. Limits have CLI flags and default to 3 parallel agents, 12 total agents, depth 5, 180 seconds, 8 tool calls per agent, and 32,000 approximate tokens.
+## Research quality
 
-## Research quality behavior
-
-- Fixture mode uses deterministic capability matching and extractive Markdown. It makes no LLM calls and stays fully offline.
-- Live mode uses the configured model to plan specialist/tool actions, decide follow-up research after each evidence turn, and synthesize the answer.
-- Python executes every web, arXiv, SEC, URL, and document tool call; the model never performs HTTP requests directly.
-- Live synthesis receives source excerpts and URLs. Every factual output line must cite a collected source ID; missing or unknown citations reject the model output.
-- Live Tavily and arXiv queries remove instruction prose and follow-up metadata before sending the query. Fixture search remains unchanged and deterministic.
-- Architecture findings need a subject plus implementation terms such as candidate generation, retrieval, ranking, training, or serving.
-- Competitor findings need a named competitor plus recommendation-system implementation evidence.
-- Incomplete, fragmentary, boilerplate, promotional, social-card, or obviously noisy claims are dropped. Relevant pages yield multiple distinct full-content claims.
-- Duplicate claims merge their source IDs; each URL appears once in the source list with its source type.
-- Broad “what does it do” and “tell me more” questions group extractive claims into purpose, components, operation, use cases, status, and limitations; uncovered areas remain explicit.
-- Fixture synthesis remains deterministic extractive Markdown.
+- Tools return compact source records; runtime validates findings while
+  specialists return provider-compatible summaries.
+- Python validates evidence, merges duplicates, and detects conflicts and gaps.
+- Live factual output must cite collected source IDs.
+- Fixture synthesis remains deterministic and extractive.
+- Live HTML extraction is plain text.
+- Token accounting is approximate and can differ from provider billing.
+- SEC matching is limited to company names or tickers present in the query.
 
 ## Checks
 
@@ -137,11 +223,3 @@ uv run pytest
 uv lock --check
 git diff --check
 ```
-
-## Remaining limits
-
-- Multi-topic questions are split into architecture and competitor sections when detected; unsupported topics and low-quality claims are reported or dropped.
-- Topic follow-ups remain scoped to the missing topic. Generic multi-source questions may still use a second source category.
-- Live HTML extraction is plain text. PDF, DOCX, and spreadsheets are deferred.
-- Token accounting uses provider-reported totals when available plus the existing character estimate for stored evidence; exact billing can differ by provider.
-- SEC lookup matches company names/tickers present in the query and returns recent filing metadata.

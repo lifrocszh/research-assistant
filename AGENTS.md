@@ -14,17 +14,19 @@ change.
 
 - Python `>=3.12`, managed with `uv`; source uses the `src/` layout.
 - CLI entry point is `research-assistant = research_assistant.cli:main`.
-- LangGraph graph/checkpointer owns durable turn state; custom runtime code
-  handles bounded dynamic delegation. SQLite checkpoints default to
-  `.research-assistant/checkpoints.sqlite`.
-- `registry.py` discovers capabilities; `engine.py` orchestrates bounded
-  research; `tools.py` provides fixture/live adapters and extraction.
+- Deep Agents/LangGraph owns supervisor delegation and checkpoints. SQLite
+  checkpoints default to `.research-assistant/checkpoints.deepagents.sqlite`.
+- `registry.py` validates versioned catalog manifests; `platform.py` assembles
+  subagents and owned tools; `engine.py` adapts evidence/events/durability;
+  `tools.py` provides fixture/live adapters and extraction.
 - `ui.py` provides the Phase 2 FastAPI/WebSocket UI. It consumes existing
   `RunEvent` objects and contains no orchestration logic. The browser page uses
   vanilla HTML/CSS/JavaScript, defaults to live mode, and renders a live event
   timeline beside the final answer.
-- Phase 1 synthesis is deterministic extractive Markdown. Live HTML becomes
-  plain text. PDF, DOCX, and spreadsheet extraction are not implemented.
+- Fixture synthesis is deterministic extractive Markdown. Live answers must
+  cite collected URLs or fall back to deterministic grounded Markdown. Live
+  HTML becomes plain text. PDF, DOCX, and spreadsheet extraction are not
+  implemented.
 - `plan.md` and `spec.md` describe intended scope. Verify source behavior
   before treating them as implemented.
 

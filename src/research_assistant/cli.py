@@ -54,7 +54,7 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _common(parser: argparse.ArgumentParser, *, include_limits: bool = False) -> None:
-    parser.add_argument("--checkpoint", default=".research-assistant/checkpoints.sqlite")
+    parser.add_argument("--checkpoint", default=".research-assistant/checkpoints.deepagents.sqlite")
     parser.add_argument("--log-dir", default=".research-assistant/logs", help="directory for detailed per-run logs")
     parser.add_argument("--jsonl", metavar="PATH", help="event file; use - for stdout")
     parser.add_argument("--output", metavar="PATH", help="write final Markdown")

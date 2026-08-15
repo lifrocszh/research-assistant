@@ -1,0 +1,11 @@
+skill:
+  id: academic_research
+  version: 1.0.0
+  description: Find and assess scholarly sources.
+  entrypoint: SKILL.md
+  required_tools:
+    - fetch_arxiv
+  keywords:
+    - academic
+    - paper
+    - study

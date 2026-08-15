@@ -1,0 +1,12 @@
+skill:
+  id: company_research
+  version: 1.0.0
+  description: Prioritize filings and primary company evidence.
+  entrypoint: SKILL.md
+  required_tools:
+    - fetch_sec
+    - web_search
+  keywords:
+    - company
+    - financial
+    - sec

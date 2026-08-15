@@ -1,0 +1,15 @@
+tool:
+  id: fetch_sec
+  version: 1.0.0
+  description: Search public SEC submissions.
+  execution: python
+  input_schema: SearchInput
+  output_schema: SourceRecords
+  permissions:
+    - network
+  source_types:
+    - regulatory
+  keywords:
+    - sec
+    - filing
+    - company

@@ -1,0 +1,15 @@
+tool:
+  id: search_document
+  version: 1.0.0
+  description: Search loaded Markdown or text documents.
+  execution: python
+  input_schema: DocumentSearchInput
+  output_schema: SourceRecords
+  permissions:
+    - document_read
+  source_types:
+    - document
+  keywords:
+    - search
+    - document
+    - file

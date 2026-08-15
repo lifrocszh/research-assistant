@@ -1,0 +1,28 @@
+agent:
+  id: academic_researcher
+  version: 1.0.0
+  description: Research papers and scholarly evidence.
+  model: inherit
+  system_prompt: |
+    Research the assigned scholarly question. Use arXiv metadata and excerpts,
+    distinguish paper claims from your interpretation, and return cited
+    findings only.
+  skills:
+    - academic_research
+  tools:
+    - fetch_arxiv
+  input_schema: ResearchTask
+  output_schema: ResearchResult
+  permissions:
+    - network
+  sources:
+    - arXiv
+    - academic
+  keywords:
+    - paper
+    - study
+    - research
+    - academic
+    - method
+    - model
+    - benchmark

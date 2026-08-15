@@ -12,20 +12,26 @@ def test_websocket_streams_existing_events_and_answer(tmp_path) -> None:
         page = client.get("/")
         assert page.status_code == 200
         assert 'class="research-frame"' in page.text
-        assert 'class="activity-rail"' in page.text
-        assert 'class="report-panel"' in page.text
+        assert 'class="report-panel conversation-panel"' in page.text
         assert 'id="question" name="question"' in page.text
         assert 'id="events"' in page.text
         assert 'id="answer"' in page.text
-        assert "Ask a question. Get a grounded report." in page.text
+        assert 'id="live-update"' in page.text
+        assert 'id="activity-details"' in page.text
+        assert "What can I research for you?" in page.text
+        assert "Delegated to ${agent}." in page.text
+        assert "is calling ${tool}" in page.text
+        assert "Enough context gathered." in page.text
+        assert "scrollIntoView" not in page.text
+        assert "\x08" not in page.text
+        assert r"replace(/\b\w/g" in page.text
+        assert "String(value || '').replaceAll" in page.text
         assert "--bg-primary: #f7f7f5" in page.text
         assert "--accent: #2477d4" in page.text
-        assert ".workspace { display: grid; grid-template-columns: minmax(215px, 250px)" in page.text
-        assert "height: min(720px, calc(100vh - 380px))" in page.text
-        assert "#events { flex: 1; min-height: 0;" in page.text
-        assert ".answer { flex: 1; min-height: 0;" in page.text
+        assert ".workspace { min-height: 420px; }" in page.text
+        assert "#events { max-height: 320px;" in page.text
         assert "scrollbar-gutter: stable" in page.text
-        assert page.text.count("overflow-y: auto") == 2
+        assert page.text.count("overflow-y: auto") == 1
         with client.websocket_connect("/ws") as websocket:
             websocket.send_json({"question": "What does LangGraph provide?", "mode": "fixture"})
             messages = []
@@ -35,6 +41,10 @@ def test_websocket_streams_existing_events_and_answer(tmp_path) -> None:
                     break
 
     assert messages[0]["event_type"] == "run_started"
+    assert any(message["event_type"] == "agent_started" for message in messages)
+    assert any(message["event_type"] == "tool_started" for message in messages)
+    assert any(message["event_type"] == "tool_finished" for message in messages)
+    assert any(message["event_type"] == "evidence_added" for message in messages)
     assert any(message["event_type"] == "run_finished" for message in messages)
     assert messages[-1]["event_type"] == "answer"
     assert "LangGraph" in messages[-1]["final_answer"]

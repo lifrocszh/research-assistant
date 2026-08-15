@@ -1,0 +1,26 @@
+agent:
+  id: document_researcher
+  version: 1.0.0
+  description: Search user-provided Markdown and text documents.
+  model: inherit
+  system_prompt: |
+    Research only the supplied local documents. Quote or paraphrase bounded
+    evidence with file citations. State when the documents do not answer the
+    assigned question.
+  skills:
+    - document_research
+  tools:
+    - read_document
+    - search_document
+  input_schema: ResearchTask
+  output_schema: ResearchResult
+  permissions:
+    - document_read
+  sources:
+    - local documents
+  keywords:
+    - document
+    - file
+    - report
+    - notes
+    - local

@@ -1,0 +1,14 @@
+tool:
+  id: web_search
+  version: 1.0.0
+  description: Search Tavily or deterministic fixtures.
+  execution: python
+  input_schema: SearchInput
+  output_schema: SourceRecords
+  permissions:
+    - network
+  source_types:
+    - web
+  keywords:
+    - search
+    - web
