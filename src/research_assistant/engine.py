@@ -8,7 +8,6 @@ import threading
 import traceback
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TypedDict
@@ -65,6 +64,10 @@ _BOILERPLATE = re.compile(
     r"\b(?:advertisement|advertising|subscribe|newsletter|cookie|privacy policy|all rights reserved|skip to|read more|sign up|written by|image courtesy|follow\s+@?|(?:the|this) source (?:discusses|covers|describes)|world's most powerful|try\s+\S+(?:\s+\S+){0,2}\s+today|\[\.\.\.\])\b",
     re.IGNORECASE,
 )
+_MAX_FINDINGS_PER_RECORD = 3
+_MAX_FINDINGS_PER_AGENT_RESULT = 24
+_MAX_FINDINGS_PER_RUN = 120
+_MAX_SYNTHESIS_RESERVE = 16_384
 
 
 def _broad_subject(question: str) -> str:
@@ -341,12 +344,28 @@ class ResearchRuntime:
         actions = state.decision.actions
         for action in actions:
             self._log(state, "agent_spawn", action=action.model_dump(mode="json"))
+
+        grouped: dict[str, list[Action]] = {}
+        for action in actions:
+            grouped.setdefault(action.agent, []).append(action)
+
+        def run_group(group: list[Action]) -> list[AgentResult]:
+            used = state.agent_tool_calls.get(group[0].agent, 0)
+            results = []
+            for action in group:
+                result = self._run_action(state, action, used_override=used)
+                results.append(result)
+                used += result.tool_calls
+            return results
+
+        groups = list(grouped.values())
         if state.decision.parallel:
             self._emit(state, "parallel_started", "running", summary=f"agents={len(actions)}")
-            with ThreadPoolExecutor(max_workers=min(len(actions), state.limits.max_parallel_agents)) as pool:
-                results = list(pool.map(lambda action: self._run_action(state, action), actions))
+            with ThreadPoolExecutor(max_workers=min(len(groups), state.limits.max_parallel_agents)) as pool:
+                grouped_results = list(pool.map(run_group, groups))
         else:
-            results = [self._run_action(state, action) for action in actions]
+            grouped_results = [run_group(group) for group in groups]
+        results = [result for group in grouped_results for result in group]
         state.pending_results = results
         state.total_agents += len(actions)
         for action in actions:
@@ -355,20 +374,21 @@ class ResearchRuntime:
                 state.used_agents.append(action.agent)
         return self._dump(state)
 
-    def _run_action(self, state: ResearchState, action: Action) -> AgentResult:
+    def _run_action(self, state: ResearchState, action: Action, *, used_override: int | None = None) -> AgentResult:
         self._emit(state, "agent_started", "running", agent=action.agent, task=action.task)
         self._log(state, "task_started", agent=action.agent, task=action.task, skills=action.skills, tools=action.tools, follow_up=action.follow_up)
         findings, errors, calls = [], [], 0
         remaining = state.limits.max_runtime_seconds - (datetime.now(UTC) - state.started_at).total_seconds()
         tools = ResearchTools(state.mode, state.fixture_path, timeout=max(0.001, min(10, remaining)))
         try:
-            used = state.agent_tool_calls.get(action.agent, 0)
+            used = state.agent_tool_calls.get(action.agent, 0) if used_override is None else used_override
             allowed_tools = action.tools
             if state.mode == "live" and (spec := self.registry.agents.get(action.agent)):
                 allowed_tools = spec.core_tools
             planned_tools = iter(action.tools)
             tool_name = next(planned_tools, None)
             query = action.task
+            seen_queries: set[str] = set()
             while tool_name:
                 if (datetime.now(UTC) - state.started_at).total_seconds() >= state.limits.max_runtime_seconds:
                     errors.append("runtime limit reached")
@@ -376,6 +396,11 @@ class ResearchRuntime:
                 if used + calls >= state.limits.max_tool_calls_per_agent:
                     errors.append("agent tool-call limit reached")
                     break
+                normalized_query = " ".join(query.lower().split())
+                if normalized_query in seen_queries:
+                    errors.append("duplicate tool query skipped")
+                    break
+                seen_queries.add(normalized_query)
                 self._emit(state, "tool_started", "running", agent=action.agent, task=tool_name)
                 call_details = {"agent": action.agent, "tool": tool_name, "query": query, "documents": state.documents, "call_number": calls + 1}
                 self._log(state, "subtask_started", **call_details)
@@ -383,15 +408,23 @@ class ResearchRuntime:
                 try:
                     records = tools.invoke(tool_name, query, state.documents)
                     findings.extend(self._findings(records, action.topic, state.question))
-                    logged_records = []
-                    for record in records:
-                        details = asdict(record)
-                        details["content_length"] = len(record.content)
-                        details["content"] = record.content[:2_000]
-                        logged_records.append(details)
+                    findings = findings[:_MAX_FINDINGS_PER_AGENT_RESULT]
+                    logged_records = [
+                        {
+                            "title": record.title,
+                            "url": record.url,
+                            "source_type": record.source_type,
+                            "claim": record.claim,
+                            "confidence": record.confidence,
+                            "content_length": len(record.content),
+                        }
+                        for record in records
+                    ]
                     self._log(state, "tool_result", agent=action.agent, tool=tool_name, records=logged_records, record_count=len(records))
                     self._emit(state, "tool_finished", "finished", agent=action.agent, task=tool_name, summary=f"records={len(records)}")
                     calls += 1
+                    if len(findings) >= _MAX_FINDINGS_PER_AGENT_RESULT:
+                        break
                     if state.mode == "live":
                         next_call = self._llm_next_tool(state, action, allowed_tools, tool_name, query, records)
                         if next_call is None:
@@ -410,7 +443,16 @@ class ResearchRuntime:
         finally:
             tools.close()
         result = AgentResult(agent=action.agent, task=action.task, topic=action.topic, findings=findings, tool_calls=calls, errors=errors)
-        self._log(state, "agent_result", result=result.model_dump(mode="json"))
+        self._log(
+            state,
+            "agent_result",
+            agent=result.agent,
+            task=result.task,
+            finding_count=len(result.findings),
+            tool_calls=result.tool_calls,
+            error_count=len(result.errors),
+            claim_sample=[finding.claim[:240] for finding in result.findings[:3]],
+        )
         self._emit(state, "agent_finished", "finished" if findings else "partial", agent=action.agent, task=action.task, summary=f"findings={len(findings)} errors={len(errors)}")
         return result
 
@@ -423,7 +465,8 @@ class ResearchRuntime:
         query: str,
         records: list[SourceRecord],
     ) -> tuple[str, str] | None:
-        if self._remaining_tokens(state) <= 0:
+        research_tokens = self._remaining_research_tokens(state)
+        if research_tokens <= 0:
             return None
         prompt = json.dumps(
             {
@@ -445,11 +488,14 @@ class ResearchRuntime:
             "Use fetch_url only with an absolute HTTP(S) URL from results. Tool execution remains in Python. "
             "Return only the requested JSON object."
         )
+        max_tokens = self._completion_budget(research_tokens, system, prompt)
+        if max_tokens <= 0:
+            return None
         try:
             raw, tokens = self._get_llm().complete_json(
                 system,
                 prompt,
-                max_tokens=min(512, self._remaining_tokens(state)),
+                max_tokens=min(512, max_tokens),
                 timeout=self._remaining_time(state),
             )
             self._consume_tokens(state, tokens)
@@ -483,6 +529,8 @@ class ResearchRuntime:
                     continue
                 accepted.append(claim)
                 findings.append(Finding(claim=claim, source=record.title, source_type=record.source_type, evidence=claim, confidence=record.confidence, citation=record.url, topic=topic))
+                if len(findings) >= _MAX_FINDINGS_PER_RECORD:
+                    break
         return findings
 
     @staticmethod
@@ -531,20 +579,32 @@ class ResearchRuntime:
         state = ResearchState.model_validate(value["data"])
         added = 0
         for result in state.pending_results:
-            self._log(state, "result_collected", result=result.model_dump(mode="json"))
+            self._log(
+                state,
+                "result_collected",
+                agent=result.agent,
+                task=result.task,
+                finding_count=len(result.findings),
+                tool_calls=result.tool_calls,
+                error_count=len(result.errors),
+            )
             state.tool_calls += result.tool_calls
             state.agent_tool_calls[result.agent] = state.agent_tool_calls.get(result.agent, 0) + result.tool_calls
             for finding in result.findings:
                 key = (finding.citation, finding.claim)
                 if any((item.citation, item.claim) == key for item in state.evidence.findings):
                     continue
-                token_cost = max(1, (len(finding.claim) + len(finding.evidence)) // 4)
-                if state.approximate_tokens + token_cost > state.limits.max_tokens_per_run:
-                    state.approximate_tokens = state.limits.max_tokens_per_run
-                    continue
+                if len(state.evidence.findings) >= _MAX_FINDINGS_PER_RUN:
+                    break
+                if state.mode != "live":
+                    token_cost = max(1, (len(finding.claim) + len(finding.evidence)) // 4)
+                    if state.approximate_tokens + token_cost > state.limits.max_tokens_per_run:
+                        state.approximate_tokens = state.limits.max_tokens_per_run
+                        continue
                 state.evidence.findings.append(finding)
                 state.evidence.sources = list(dict.fromkeys([*state.evidence.sources, finding.source]))
-                state.approximate_tokens += token_cost
+                if state.mode != "live":
+                    state.approximate_tokens += token_cost
                 added += 1
         state.pending_results = []
         state.depth += 1
@@ -588,6 +648,9 @@ class ResearchRuntime:
     def _llm_decide(self, state: ResearchState) -> Decision:
         if reason := self.orchestrator._limit_reason(state):
             return Decision(rationale=reason, finish=True)
+        research_tokens = self._remaining_research_tokens(state)
+        if research_tokens <= 0:
+            return Decision(rationale="Synthesis token reserve reached", finish=True)
         remaining_agents = min(
             state.limits.max_parallel_agents,
             state.limits.max_total_agents - state.total_agents,
@@ -622,10 +685,13 @@ class ResearchRuntime:
             "Finish only when evidence answers the question or bounds make more research impossible. "
             "Return only the requested JSON object."
         )
+        max_tokens = self._completion_budget(research_tokens, system, prompt)
+        if max_tokens <= 0:
+            return Decision(rationale="Research prompt exceeds remaining token budget", finish=True)
         raw, tokens = self._get_llm().complete_json(
             system,
             prompt,
-            max_tokens=self._remaining_tokens(state),
+            max_tokens=max_tokens,
             timeout=self._remaining_time(state),
         )
         self._consume_tokens(state, tokens)
@@ -665,17 +731,22 @@ class ResearchRuntime:
     def _llm_synthesis(self, state: ResearchState) -> str:
         if not state.evidence.findings:
             return self._markdown(state)
-        if self._remaining_tokens(state) <= 0:
+        remaining_tokens = self._remaining_tokens(state)
+        if remaining_tokens <= 0:
             return "# Research answer\n\nToken budget reached before synthesis.\n"
         system = (
             "Write a concise evidence-grounded Markdown answer. Every factual claim line must end with one or more "
             "provided source IDs such as [S1]. Use # headings rather than standalone bold labels when possible. "
             "Use only supplied evidence. Do not add a Sources section."
         )
+        prompt = json.dumps({"question": state.question, "evidence": self._evidence_prompt(state)}, ensure_ascii=False)
+        max_tokens = self._completion_budget(remaining_tokens, system, prompt)
+        if max_tokens <= 0:
+            return self._markdown(state)
         answer, tokens = self._get_llm().complete_text(
             system,
-            json.dumps({"question": state.question, "evidence": self._evidence_prompt(state)}, ensure_ascii=False),
-            max_tokens=self._remaining_tokens(state),
+            prompt,
+            max_tokens=max_tokens,
             timeout=self._remaining_time(state),
         )
         self._consume_tokens(state, tokens)
@@ -743,6 +814,19 @@ class ResearchRuntime:
     @staticmethod
     def _remaining_tokens(state: ResearchState) -> int:
         return max(0, state.limits.max_tokens_per_run - state.approximate_tokens)
+
+    @staticmethod
+    def _synthesis_reserve(state: ResearchState) -> int:
+        return min(_MAX_SYNTHESIS_RESERVE, max(1, state.limits.max_tokens_per_run // 5))
+
+    @classmethod
+    def _remaining_research_tokens(cls, state: ResearchState) -> int:
+        return max(0, cls._remaining_tokens(state) - cls._synthesis_reserve(state))
+
+    @staticmethod
+    def _completion_budget(budget: int, system: str, prompt: str) -> int:
+        estimated_input = max(1, (len(system) + len(prompt) + 3) // 4)
+        return max(0, budget - estimated_input)
 
     @staticmethod
     def _consume_tokens(state: ResearchState, tokens: int) -> None:

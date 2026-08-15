@@ -8,7 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from research_assistant.engine import DynamicOrchestrator, ResearchRuntime
-from research_assistant.models import Action, Decision, Finding, ResearchState, RuntimeLimits
+from research_assistant.models import Action, AgentResult, Decision, Finding, ResearchState, RuntimeLimits
 from research_assistant.registry import CapabilityRegistry
 from research_assistant.tools import FixtureSearchAdapter, ResearchTools, SourceRecord, TavilySearchAdapter, ToolError
 
@@ -270,6 +270,72 @@ def test_bounds_and_tool_call_limit(tmp_path) -> None:
     assert token_state.approximate_tokens <= 1
 
 
+def test_parallel_duplicate_agent_respects_shared_tool_budget(tmp_path, monkeypatch) -> None:
+    class OneTool:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def invoke(self, name: str, query: str, documents: list[str]) -> list[SourceRecord]:
+            return [SourceRecord("Source", "https://example.test/source", "A supported claim.", "web", "A supported claim.")]
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr("research_assistant.engine.ResearchTools", OneTool)
+    state = ResearchState(
+        thread_id="shared-tool-budget",
+        question="Research multiple sources",
+        decision=Decision(
+            rationale="parallel topics",
+            actions=[
+                Action(agent="web_researcher", task="topic one", tools=["web_search"]),
+                Action(agent="web_researcher", task="topic two", tools=["web_search"]),
+            ],
+            parallel=True,
+        ),
+        limits=RuntimeLimits(max_parallel_agents=2, max_total_agents=2, max_tool_calls_per_agent=1),
+    )
+    with ResearchRuntime(tmp_path / "shared-tool-budget.sqlite") as runtime:
+        dispatched = runtime._dispatch({"data": state.model_dump(mode="json")})
+        collected = runtime._collect(dispatched)
+    result = ResearchState.model_validate(collected["data"])
+    assert result.tool_calls == 1
+    assert result.agent_tool_calls == {"web_researcher": 1}
+
+
+def test_live_finding_ingestion_does_not_charge_finding_text(tmp_path) -> None:
+    finding = Finding(
+        claim="A supported claim.",
+        source="Source",
+        source_type="web",
+        evidence="A supported claim.",
+        confidence=0.9,
+        citation="https://example.test/source",
+    )
+    state = ResearchState(
+        thread_id="live-collect",
+        question="Research",
+        mode="live",
+        approximate_tokens=123,
+        pending_results=[AgentResult(agent="web_researcher", task="Research", findings=[finding], tool_calls=1)],
+    )
+    with ResearchRuntime(tmp_path / "live-collect.sqlite") as runtime:
+        collected = runtime._collect({"data": state.model_dump(mode="json")})
+    result = ResearchState.model_validate(collected["data"])
+    assert result.approximate_tokens == 123
+    assert len(result.evidence.findings) == 1
+
+
+def test_findings_cap_sentences_per_record() -> None:
+    record = SourceRecord(
+        "Source",
+        "https://example.test/source",
+        "LangGraph supports durable checkpointed execution for research workflows. Enterprise deployments isolate tools using explicit capability registries and policies. Researchers compare retrieval quality using source citations and confidence scores. Runtime state persists across interruptions through SQLite checkpoints.",
+        "web",
+    )
+    assert len(ResearchRuntime._findings([record], question="Research")) == 3
+
+
 def test_conflict_and_gap_detection(tmp_path) -> None:
     with ResearchRuntime(tmp_path / "critique.sqlite") as runtime:
         conflict = runtime.run("Research Acme 2025 margin decline with multiple sources", thread_id="conflict")
@@ -302,6 +368,8 @@ def test_run_writes_detailed_log(tmp_path) -> None:
     for marker in ("session_start", "decision", "agent_spawn", "subtask_started", "tool_call", "tool_result", "agent_result", "result_collected", "final_answer", "session_end"):
         assert f'"kind": "{marker}"' in content
     assert "Dynamic delegation overview" in content
+    entries = [json.loads(line) for line in content.splitlines()]
+    assert all("result" not in entry for entry in entries if entry["kind"] in {"agent_result", "result_collected"})
 
 
 def test_each_run_gets_a_distinct_log(tmp_path) -> None:

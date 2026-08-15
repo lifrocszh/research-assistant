@@ -162,6 +162,31 @@ def test_mocked_synthesis_is_grounded_to_source_url(tmp_path) -> None:
     assert llm.calls == ["synthesize"]
 
 
+def test_synthesis_uses_markdown_when_prompt_exceeds_remaining_budget(tmp_path) -> None:
+    llm = FakeLLM(answers=["unused"])
+    state = ResearchState(
+        thread_id="small-budget-synthesis",
+        question="What does LangGraph provide?",
+        mode="live",
+        limits=RuntimeLimits(max_tokens_per_run=100),
+    )
+    state.evidence.findings.append(
+        Finding(
+            claim="Supported claim " + ("with detail " * 80),
+            source="Source",
+            source_type="web",
+            evidence="Supported evidence.",
+            confidence=0.9,
+            citation="https://example.test/source",
+        )
+    )
+    with ResearchRuntime(tmp_path / "small-budget-synthesis.sqlite", llm_client=llm) as runtime:
+        answer = runtime._llm_synthesis(state)
+    assert "Token budget reached before synthesis" not in answer
+    assert "Supported claim" in answer
+    assert llm.calls == []
+
+
 def test_provider_rejects_malformed_model_output() -> None:
     client = OpenAIClient("test", "test-model")
     client.client.close()
